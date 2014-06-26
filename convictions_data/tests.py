@@ -7,6 +7,37 @@ from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.models import Conviction, RawConviction
 
 class ConvictionModelTestCase(TestCase):
+    def test_split_city_state(self):
+        test_values = [
+            ("EVANSTON ILL.", "EVANSTON", "ILL"),
+            ("CHICAGO,ILL.", "CHICAGO", "ILL"),
+            ("PALOS HILLS", "PALOS HILLS", ""),
+            ("CALUMET CITYIL", "CALUMET CITY", "IL"),
+            ("CNTRY CLB HL IL", "CNTRY CLB HL", "IL"),
+            ("CHGO HGTS IL", "CHGO HGTS", "IL"),
+            ("MELROSE PK", "MELROSE PK", ""),
+            ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
+            ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
+            ("MICHIGAN CTYIN", "MICHIGAN CTY", "IN"),
+        ]
+        for city_state, expected_city, expected_state in test_values:
+            city, state = Conviction._split_city_state(city_state)
+            self.assertEqual(city, expected_city)
+            self.assertEqual(state, expected_state)
+
+    def test_clean_city_state(self):
+        test_values = [
+            ("EVANSTON", "ILL", "EVANSTON", "IL"),
+            ("CNTRY CLB HL", "IL", "COUNTRY CLUB HILLS", "IL"),
+            ("CHGO HGTS", "IL", "CHICAGO HEIGHTS", "IL"),
+            ("MELROSE PK", "", "MELROSE PARK", ""),
+            ("MICHIGAN CTY", "IN", "MICHIGAN CITY", "IN"),
+        ]
+        for city, state, expected_city, expected_state in test_values:
+            clean_city, clean_state = Conviction._clean_city_state(city, state)
+            self.assertEqual(clean_city, expected_city)
+            self.assertEqual(clean_state, expected_state)
+
     def test_parse_city_state(self):
         test_values = [
             ("EVANSTON ILL.", "EVANSTON", "IL"),
@@ -15,29 +46,15 @@ class ConvictionModelTestCase(TestCase):
             ("CALUMET CITYIL", "CALUMET CITY", "IL"),
             ("CNTRY CLB HL IL", "COUNTRY CLUB HILLS", "IL"),
             ("CHGO HGTS IL", "CHICAGO HEIGHTS", "IL"),
+            ("MELROSE PK", "MELROSE PARK", ""),
+            ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
+            ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
+            ("MICHIGAN CTYIN", "MICHIGAN CITY", "IN"),
         ]
         for city_state, expected_city, expected_state in test_values:
             city, state = Conviction._parse_city_state(city_state)
             self.assertEqual(city, expected_city)
             self.assertEqual(state, expected_state)
-
-    def test_clean_city(self):
-        test_values = [
-            ("CHGO", "CHICAGO"),
-        ]
-
-        for raw_city, expected_city in test_values:
-            self.assertEqual(Conviction._clean_city(raw_city), expected_city)
-
-    def test_clean_state(self):
-        test_values = [
-            ("IL", "IL"),
-            ("ILL", "IL"),
-        ]
-        
-        for raw_state, expected_state in test_values:
-            self.assertEqual(Conviction._clean_state(raw_state),
-                    expected_state)
 
     def test_parse_date(self):
         test_values = [
@@ -55,7 +72,7 @@ class ConvictionModelTestCase(TestCase):
             sequence_number="1",
             st_address="707 W WAVELAND",
             city_state="CHGO ILL",
-            zipcode="XXXXX",
+            zipcode="60622",
             dob="19-Nov-43",
             arrest_date="2-Jun-89"
         )
@@ -63,7 +80,7 @@ class ConvictionModelTestCase(TestCase):
         conviction.load_from_raw()
         self.assertEqual(conviction.case_number, raw.case_number)
         self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.st_address, raw.st_address)
+        self.assertEqual(conviction.address, raw.st_address)
         self.assertEqual(conviction.city, "CHICAGO")
         self.assertEqual(conviction.state, "IL")
         self.assertEqual(conviction.zipcode, raw.zipcode)
@@ -79,19 +96,31 @@ class ConvictionModelTestCase(TestCase):
             sequence_number="1",
             st_address="707 W WAVELAND",
             city_state="CHGO ILL",
-            zipcode="XXXXX",
+            zipcode="60622",
             dob="19-Nov-43",
             arrest_date="2-Jun-89"
         )
         conviction = Conviction(raw_conviction=raw)
         self.assertEqual(conviction.case_number, raw.case_number)
         self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.st_address, raw.st_address)
+        self.assertEqual(conviction.address, raw.st_address)
         self.assertEqual(conviction.city, "CHICAGO")
         self.assertEqual(conviction.state, "IL")
         self.assertEqual(conviction.zipcode, raw.zipcode)
         self.assertEqual(conviction.dob, datetime.date(1943, 11, 19))
         self.assertEqual(conviction.arrest_date, datetime.date(1989, 6, 2))
+
+
+class ConvictionsModelWithMunicipalitiesTestCase(TestCase):
+    fixtures = ['test_municipalities.json']
+
+    def test_detect_state(self):
+        test_values = [
+            ("PALOS HILLS", "IL"),
+        ]
+        for city, expected_state in test_values:
+            state = Conviction._detect_state(city)
+            self.assertEqual(state, expected_state)
 
 
 class BatchOpenMapQuestTestCase(TestCase):

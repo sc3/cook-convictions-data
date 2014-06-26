@@ -23,9 +23,16 @@ CITY_NAME_ABBREVIATIONS = {
     "CNTRY": "COUNTRY",
     "HL": "HILLS",
     "HGTS": "HEIGHTS",
+    "HTS": "HEIGHTS",
+    "PK": "PARK",
+    "VILL": "VILLAGE",
+    "CTY": "CITY",
 }
 
 ZIPCODE_RE = re.compile(r'^\d{5}$')
+
+# Strings that represent states but are not official abbreviations
+MOCK_STATES = set(['ILL', 'I', 'MX'])
 
 class ConvictionsQuerySet(models.query.QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
@@ -145,7 +152,7 @@ class Conviction(models.Model):
     objects = ConvictionManager()
 
     PUNCTUATION_RE = re.compile(r'[,.]+')
-    CHICAGO_RE = re.compile(r'^CH[I]{0,1}C{0,1}A{0,1}GO$')
+    CHICAGO_RE = re.compile(r'^CH[I]{0,1}C{0,1}A{0,1}GO{0,1}$')
 
     def __init__(self, *args, **kwargs):
         super(Conviction, self).__init__(*args, **kwargs)
@@ -204,46 +211,56 @@ class Conviction(models.Model):
         self.city, self.state = self._parse_city_state(self.raw_conviction.city_state)
 
         return self
-        
+       
     @classmethod
     def _parse_city_state(cls, city_state):
-        """Parse a combined city/state field into city and state parts"""
+        city, state = cls._split_city_state(city_state)
+        return cls._clean_city_state(city, state)
+
+    @classmethod
+    def _split_city_state(cls, city_state):
         city_state = cls.PUNCTUATION_RE.sub(' ', city_state)
         bits = re.split(r'\s+', city_state.strip())
-        if len(bits) == 1:
-            city = bits[0]
-            state = '' 
-        elif len(bits) > 1 and len(bits) <= 4:
-            city = ' '.join([cls._unabbreviate_city_bit(s.strip())
-                             for s in bits[:-1]])
-            state = bits[-1]
-            if us.states.lookup(state) is None:
-                if state.endswith("IL"):
-                    # IL is concatenated with the second bit of the city/state
-                    # Set the state to "IL" and add the rest of the city to the
-                    # city string.
-                    city = "{} {}".format(city, state.strip("IL"))
-                    state = "IL"
-                else:
-                    # Assume there's no state and just append the second bit to
-                    # the city
-                    city += " " + state
-                    logger.warning("Unable to parse state from '{}'".format(city_state))
-                    state = "" 
 
+        last = bits[-1]
+
+        if us.states.lookup(last) or last in MOCK_STATES:
+            state = last 
+            city_bits = bits[:-1]
+        elif len(last) >= 2 and (us.states.lookup(last[-2:]) or
+                last[-2:] in MOCK_STATES): 
+            state = last[-2:]
+            city_bits = bits[:-1] + [last[:-2]]
         else:
-            raise Exception("Unexpected number of bits for '{}'".format(city_state))
+            state = ""
+            city_bits = bits
 
-        city = cls._clean_city(city, state)
-        state = cls._clean_state(city, state)
+        return " ".join(city_bits), state
 
-        return city, state
+    @classmethod
+    def _clean_city_state(cls, city, state):
+        clean_city = ' '.join([cls._fix_chicago(cls._unabbreviate_city_bit(s))
+                               for s in city.split(' ')])
+
+        if state == "ILL":
+            clean_state = "IL"
+        else:
+            clean_state = state
+
+        return clean_city, clean_state
 
     @classmethod
     def _unabbreviate_city_bit(cls, s):
         try:
             return CITY_NAME_ABBREVIATIONS[s.upper()]
         except KeyError:
+            return s
+
+    @classmethod
+    def _fix_chicago(cls, s):
+        if cls.CHICAGO_RE.match(s):
+            return "CHICAGO"
+        else:
             return s
 
     @classmethod
@@ -256,28 +273,16 @@ class Conviction(models.Model):
         return zipcode
 
     @classmethod
-    def _clean_city(cls, city, state):
-        if cls.CHICAGO_RE.match(city):
-            city = "CHICAGO"
+    def _detect_state(cls, city):
+        # Check and see if the city name
+        # matches the name of a municipality in Cook County.  If it does,
+        # set the state to IL.
+        q = Q(municipality_name__iexact=city) | Q(agency_name__iexact=city)
+        
+        if Municipality.objects.filter(q).count():
+            return "IL"
 
-        return city
-
-    @classmethod
-    def _clean_state(cls, city, state):
-        state = state.upper()
-
-        if state == "ILL":
-            state = "IL"
-        elif state == "":
-            # No state has been specified.  Check and see if the city name
-            # matches the name of a municipality in Cook County.  If it does,
-            # set the state to IL.
-            q = Q(municipality_name__iexact=city) | Q(agency_name__iexact=city)
-            municipalities = Municipality.objects.filter(q)
-            if municipalities.count():
-                state = "IL"
-
-        return state
+        return ""
 
     @classmethod
     def _parse_dob(cls, dob):

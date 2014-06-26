@@ -19,6 +19,7 @@ class BatchOpenMapQuest(OpenMapQuest):
             self.scheme)
         # The key is already urlencoded, so just append it at the end
         url = "&".join((url, urlencode(params), "key={}".format(self.api_key)))
+        print(url)
         data = self._call_geocoder(url, timeout=timeout)
         return self._batch_parse_json(data['results'], exactly_one)
 
