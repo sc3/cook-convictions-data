@@ -9,6 +9,7 @@ from django.db import models
 from django.db.models import Q
 from django.contrib.gis.db import models as geo_models
 from django.conf import settings
+from django.contrib.gis.geos import Point
 from django.core.paginator import Paginator
 
 from convictions_data.geocoders import BatchOpenMapQuest
@@ -144,6 +145,7 @@ class Conviction(models.Model):
     city = models.CharField(max_length=MAX_LENGTH)
     state = models.CharField(max_length=2)
     zipcode = models.CharField(max_length=5)
+    county = models.CharField(max_length=80, default="")
 
     #ctlbkngno = models.CharField(max_length=MAX_LENGTH)
     #fgrprntno = models.CharField(max_length=MAX_LENGTH)
@@ -157,6 +159,8 @@ class Conviction(models.Model):
 
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
+
+    community_area = models.ForeignKey('CommunityArea', null=True)
 
     # Use a custom manager to add geocoding methods
     objects = ConvictionManager()
@@ -223,6 +227,21 @@ class Conviction(models.Model):
             self.state = self._detect_state(self.city)
 
         return self
+
+    def boundarize(self):
+        do_save = False
+        matching_municipalities = Municipality.objects.filter(municipality_name__iexact=self.city)
+        if matching_municipalities.count():
+            self.county = "Cook"
+            do_save = True
+
+        if self.lat and self.lon and self.city.upper() == "CHICAGO":
+            pnt = Point(self.lon, self.lat)
+            self.community_area = CommunityArea.objects.get(boundary__contains=pnt)
+            do_save = True
+
+        if do_save:
+            self.save()
        
     @classmethod
     def _parse_city_state(cls, city_state):
