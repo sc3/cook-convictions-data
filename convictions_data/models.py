@@ -53,6 +53,12 @@ class ConvictionsQuerySet(models.query.QuerySet):
             if save:
                 model.save()
 
+    def has_geocodable_address(self):
+        q = Q(address="")
+        q |= Q(zipcode="")
+        q |= (Q(state="") & Q(city=""))
+        return self.exclude(q)
+
     def has_bad_address(self):
         q = Q(state='') | Q(city='')
         q = q & Q(zipcode='')
@@ -87,6 +93,10 @@ class ConvictionManager(models.Manager):
 
     def has_bad_address(self):
         return self.get_query_set().has_bad_address()
+
+    def has_geocodable_address(self):
+        return self.get_query_set().has_geocodable_address()
+
 
 
 class RawConviction(models.Model):
@@ -209,6 +219,8 @@ class Conviction(models.Model):
             setattr(self, dst_field, val) 
 
         self.city, self.state = self._parse_city_state(self.raw_conviction.city_state)
+        if not self.state:
+            self.state = self._detect_state(self.city)
 
         return self
        
@@ -358,3 +370,29 @@ class Municipality(geo_models.Model):
         return self.name
 
 
+class CommunityArea(geo_models.Model):
+    """
+    Chicago Community Area
+
+    Wraps
+    https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6
+    """
+    number = geo_models.IntegerField()
+    name = geo_models.CharField(max_length=80)
+    shape_area = geo_models.FloatField()
+    shape_len = geo_models.FloatField()
+
+    boundary = geo_models.MultiPolygonField()
+
+    objects = geo_models.GeoManager()
+
+    FIELD_MAPPING = {
+        'number': 'AREA_NUMBE',
+        'name': 'COMMUNITY',
+        'shape_area': 'SHAPE_AREA',
+        'shape_len': 'SHAPE_LEN',
+        'boundary': 'MULTIPOLYGON',
+    }
+
+    def __str__(self):
+        return self.name
