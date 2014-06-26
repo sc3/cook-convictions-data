@@ -15,11 +15,15 @@ class BatchOpenMapQuest(OpenMapQuest):
         # Don't include URL to a thumbnail map to make the payloads smaller
         params.append(('thumbMaps', 'false'))
 
-        url = "{}://open.mapquestapi.com/geocoding/v1/batch?outFormat=json".format(
+        # TODO Switch back to open.mapquestapi.com domain once API Key issues
+        # are fixed.  See
+        # http://developer.mapquest.com/web/products/open/forums/-/message_boards/view_message/773296
+        #url = "{}://open.mapquestapi.com/geocoding/v1/batch?outFormat=json".format(
+        #    self.scheme)
+        url = "{}://www.mapquestapi.com/geocoding/v1/batch?outFormat=json".format(
             self.scheme)
         # The key is already urlencoded, so just append it at the end
         url = "&".join((url, urlencode(params), "key={}".format(self.api_key)))
-        print(url)
         data = self._call_geocoder(url, timeout=timeout)
         return self._batch_parse_json(data['results'], exactly_one)
 
