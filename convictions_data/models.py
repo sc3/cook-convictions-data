@@ -135,31 +135,106 @@ class RawConviction(models.Model):
 
 class Conviction(models.Model):
     """Conviction record with cleaned/transformed data"""
+
+    # Choices for validation of various fields
+    SEX_CHOICES = (
+      ('male', 'Male'),
+      ('female', 'Female'),
+    )
+
+    CHRGTYPE_CHOICES = (
+        ('A', 'A'),
+        ('C', 'C'),
+        ('F', 'F'),
+        ('M', 'M'),
+        ('R', 'R'),
+        ('T', 'T'),
+        ('V', 'V'),
+        ('Y', 'Y'),
+    )
+
+    CHRGTYPE_VALUES = [v for v,c in CHRGTYPE_CHOICES]
+
+    CHRGTYPE2_CHOICES = (
+        ('2', '2'),
+        ('3', '3'),
+        ('Felony', 'Felony'),
+        ('Misdemeanor', 'Misdemeanor'),
+        ('R', 'R'),
+        ('Traffic', 'Traffic'),
+        ('V', 'V'),
+        ('Y', 'Y'),
+    )
+
+    CHRGCLASS_CHOICES = (
+        ('1', '1'),
+        ('2', '2'),
+        ('3', '3'),
+        ('4', '4'),
+        ('A', 'A'),
+        ('B', 'B'),
+        ('C', 'C'),
+        # 'D' is only seen in ammndchrgclass
+        ('D', 'D'),
+        # 'F' is only seen in ammndchrgclass
+        ('F', 'F'),
+        ('G', 'G'),
+        ('M', 'M'),
+        ('N', 'N'),
+        # 'O' is only seen in ammndchrgclass
+        ('O', 'O'),
+        ('P', 'P'),
+        ('T', 'T'),
+        ('U', 'U'),
+        ('X', 'X'),
+        ('Z', 'Z'),
+    )
+
+    CHRGCLASS_VALUES = [v for v,c in CHRGCLASS_CHOICES]
+
     raw_conviction = models.ForeignKey(RawConviction)
 
-    # Fields transformed from RawConviction
+    # ID Fields 
     case_number = models.CharField(max_length=MAX_LENGTH)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
+    ctlbkngno = models.CharField(max_length=MAX_LENGTH)
+    fgrprntno = models.CharField(max_length=MAX_LENGTH)
+    statepoliceid = models.CharField(max_length=MAX_LENGTH)
+    fbiidno = models.CharField(max_length=MAX_LENGTH)
 
-    address = models.CharField(max_length=MAX_LENGTH)
+    st_address = models.CharField(max_length=MAX_LENGTH)
     city = models.CharField(max_length=MAX_LENGTH)
     state = models.CharField(max_length=2)
     zipcode = models.CharField(max_length=5)
     county = models.CharField(max_length=80, default="")
 
-    #ctlbkngno = models.CharField(max_length=MAX_LENGTH)
-    #fgrprntno = models.CharField(max_length=MAX_LENGTH)
-    #statepoliceid = models.CharField(max_length=MAX_LENGTH)
-    #fbiidno = models.CharField(max_length=MAX_LENGTH)
-
     dob = models.DateField(null=True)
     arrest_date = models.DateField(null=True)
-    #initial_date = models.DateField(null=True)
+    initial_date = models.DateField(null=True)
     chrgdispdate = models.DateField(null=True)
 
+    sex = models.CharField(max_length=10, choices=SEX_CHOICES)
+
+    # Fields that describe the charges
+    statute = models.CharField(max_length=50, help_text=("The statutory or local "
+        "ordinance citation for the offense which the defendant was "
+        "convicted."))
+    chrgdesc = models.CharField(max_length=50, help_text="Initial Charge Description")
+    chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
+    chrgtype2 = models.CharField(max_length=15, choices=CHRGTYPE2_CHOICES)
+    chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
+    chrgdisp = models.CharField(max_length=30)
+    ammndchargstatute = models.CharField(max_length=50)
+    ammndchrgdescr = models.CharField(max_length=50)
+    ammndchrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
+    ammndchrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
+    minsent = models.IntegerField(null=True)
+    maxsent = models.IntegerField(null=True)
+    amtoffine = models.IntegerField(null=True)
+    
+    # Spatial fields
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
-
     community_area = models.ForeignKey('CommunityArea', null=True)
 
     # Use a custom manager to add geocoding methods
@@ -184,10 +259,10 @@ class Conviction(models.Model):
 
     @property
     def geocoder_address(self):
-        if not self.address:
+        if not self.st_address:
             raise ValueError("Need an address to geocode")
 
-        bits = [self.address]
+        bits = [self.st_address]
 
         if self.zipcode:
             bits.append(self.zipcode)
@@ -201,26 +276,26 @@ class Conviction(models.Model):
 
     def load_from_raw(self):
         """Load fields from related RawConviction model"""
-        fields = [
-            ('case_number', 'case_number'),
-            ('sequence_number', 'sequence_number'),
-            ('st_address', 'address'),
-            ('zipcode', 'zipcode'),
-            ('ctlbkngno', 'ctlbkngno'),
-            ('fgrprntno', 'fgrprntno'),
-            ('statepoliceid', 'statepoliceid'),
-            ('fbiidno', 'fbiidno'), 
-            ('dob', 'dob'),
-            ('arrest_date', 'arrest_date'),
-        ]
-        for src_field, dst_field in fields:
-            val = getattr(self.raw_conviction, src_field)
+        for field_name in RawConviction._meta.get_all_field_names():
+            if field_name == "conviction":
+                # Skip reverse name on related field
+                continue
+
+            val = getattr(self.raw_conviction, field_name)
             try:
-                parser = getattr(self, "_parse_{}".format(dst_field))
+                parser = getattr(self, "_parse_{}".format(field_name))
                 val = parser(val)
             except AttributeError:
                 pass
-            setattr(self, dst_field, val) 
+            except ValueError as e:
+                msg = ("Error when parsing '{}' from RawConviction with case "
+                       "number '{}': {}")
+                msg = msg.format(field_name, self.raw_conviction.case_number, e)
+                logger.warning(msg)
+                if 'date' in field_name or field_name == 'dob':
+                    val = None
+
+            setattr(self, field_name, val) 
 
         self.city, self.state = self._parse_city_state(self.raw_conviction.city_state)
         if not self.state:
@@ -336,16 +411,70 @@ class Conviction(models.Model):
         if not date_string:
             return None
 
-        try:
-            dt = datetime.strptime(date_string, date_format)
-            # Try to correctly interpret the two digit year.
-            if dt.year > datetime.now().year:
-                dt = datetime(dt.year - 100, dt.month, dt.day)
+        dt = datetime.strptime(date_string, date_format)
+        # Try to correctly interpret the two digit year.
+        if dt.year > datetime.now().year:
+            dt = datetime(dt.year - 100, dt.month, dt.day)
 
-            return dt.date()
-        except ValueError as e:
-            logging.warning(e)
+        return dt.date()
+
+    @classmethod
+    def _parse_sex(cls, sex_string):
+        cln_sex_string = sex_string.strip()
+        if cln_sex_string and cln_sex_string.lower() not in ("male", "female"):
+            raise ValueError("Unexpected value '{}' for 'sex' field".format(
+                cln_sex_string))
+
+        return cln_sex_string.lower()
+
+    @classmethod
+    def _parse_chrgtype(cls, s):
+        cln_s = s.strip()
+        if cln_s == "Felony":
+            chrgtype = "F"
+        else:
+            chrgtype = cln_s
+
+        if chrgtype and chrgtype not in cls.CHRGTYPE_VALUES:
+            msg = "Unexpected value '{}'".format(chrgtype)
+            raise ValueError(msg)
+
+        return chrgtype
+
+    @classmethod
+    def _parse_chrgclass(cls, s):
+        if s and s not in cls.CHRGCLASS_VALUES:
+            msg = "Unexpected value '{}'".format(s)
+            raise ValueError(msg)
+
+        return s
+
+    @classmethod
+    def _parse_ammndchrgtype(cls, s):
+        return cls._parse_chrgtype(s)
+
+    @classmethod
+    def _parse_ammndchrgclass(cls, s):
+        return cls._parse_chrgclass(s)
+
+    @classmethod
+    def _parse_minsent(cls, s):
+        return cls._parse_int(s)
+
+    @classmethod
+    def _parse_maxsent(cls, s):
+        return cls._parse_int(s)
+
+    @classmethod
+    def _parse_amtoffine(cls, s):
+        return cls._parse_int(s)
+    
+    @classmethod
+    def _parse_int(cls, s):
+        if not s:
             return None
+
+        return int(s)
 
 
 class Municipality(geo_models.Model):
