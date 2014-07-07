@@ -1,43 +1,13 @@
 import datetime
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
+from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.models import Conviction, RawConviction
 
 class ConvictionModelTestCase(TestCase):
-    def test_split_city_state(self):
-        test_values = [
-            ("EVANSTON ILL.", "EVANSTON", "ILL"),
-            ("CHICAGO,ILL.", "CHICAGO", "ILL"),
-            ("PALOS HILLS", "PALOS HILLS", ""),
-            ("CALUMET CITYIL", "CALUMET CITY", "IL"),
-            ("CNTRY CLB HL IL", "CNTRY CLB HL", "IL"),
-            ("CHGO HGTS IL", "CHGO HGTS", "IL"),
-            ("MELROSE PK", "MELROSE PK", ""),
-            ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
-            ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
-            ("MICHIGAN CTYIN", "MICHIGAN CTY", "IN"),
-        ]
-        for city_state, expected_city, expected_state in test_values:
-            city, state = Conviction._split_city_state(city_state)
-            self.assertEqual(city, expected_city)
-            self.assertEqual(state, expected_state)
-
-    def test_clean_city_state(self):
-        test_values = [
-            ("EVANSTON", "ILL", "EVANSTON", "IL"),
-            ("CNTRY CLB HL", "IL", "COUNTRY CLUB HILLS", "IL"),
-            ("CHGO HGTS", "IL", "CHICAGO HEIGHTS", "IL"),
-            ("MELROSE PK", "", "MELROSE PARK", ""),
-            ("MICHIGAN CTY", "IN", "MICHIGAN CITY", "IN"),
-        ]
-        for city, state, expected_city, expected_state in test_values:
-            clean_city, clean_state = Conviction._clean_city_state(city, state)
-            self.assertEqual(clean_city, expected_city)
-            self.assertEqual(clean_state, expected_state)
-
     def test_parse_city_state(self):
         test_values = [
             ("EVANSTON ILL.", "EVANSTON", "IL"),
@@ -80,7 +50,7 @@ class ConvictionModelTestCase(TestCase):
         conviction.load_from_raw()
         self.assertEqual(conviction.case_number, raw.case_number)
         self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.address, raw.st_address)
+        self.assertEqual(conviction.st_address, raw.st_address)
         self.assertEqual(conviction.city, "CHICAGO")
         self.assertEqual(conviction.state, "IL")
         self.assertEqual(conviction.zipcode, raw.zipcode)
@@ -103,7 +73,7 @@ class ConvictionModelTestCase(TestCase):
         conviction = Conviction(raw_conviction=raw)
         self.assertEqual(conviction.case_number, raw.case_number)
         self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.address, raw.st_address)
+        self.assertEqual(conviction.st_address, raw.st_address)
         self.assertEqual(conviction.city, "CHICAGO")
         self.assertEqual(conviction.state, "IL")
         self.assertEqual(conviction.zipcode, raw.zipcode)
@@ -165,3 +135,37 @@ class ConvictionGeocodingTestCase(TestCase):
         conviction = Conviction.objects.get(id=conviction.id)
         self.assertAlmostEqual(conviction.lat, 41.931631, places=1)
         self.assertAlmostEqual(conviction.lon, -87.726857, places=1)
+
+class CityStateSplitterTestCase(SimpleTestCase):
+    def test_split_city_state(self):
+        test_values = [
+            ("EVANSTON ILL.", "EVANSTON", "ILL"),
+            ("CHICAGO,ILL.", "CHICAGO", "ILL"),
+            ("PALOS HILLS", "PALOS HILLS", ""),
+            ("CALUMET CITYIL", "CALUMET CITY", "IL"),
+            ("CNTRY CLB HL IL", "CNTRY CLB HL", "IL"),
+            ("CHGO HGTS IL", "CHGO HGTS", "IL"),
+            ("MELROSE PK", "MELROSE PK", ""),
+            ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
+            ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
+            ("MICHIGAN CTYIN", "MICHIGAN CTY", "IN"),
+        ]
+        for city_state, expected_city, expected_state in test_values:
+            city, state = CityStateSplitter.split_city_state(city_state)
+            self.assertEqual(city, expected_city)
+            self.assertEqual(state, expected_state)
+
+
+class CityStateCleanerTestCase(SimpleTestCase):
+    def test_clean_city_state(self):
+        test_values = [
+            ("EVANSTON", "ILL", "EVANSTON", "IL"),
+            ("CNTRY CLB HL", "IL", "COUNTRY CLUB HILLS", "IL"),
+            ("CHGO HGTS", "IL", "CHICAGO HEIGHTS", "IL"),
+            ("MELROSE PK", "", "MELROSE PARK", ""),
+            ("MICHIGAN CTY", "IN", "MICHIGAN CITY", "IN"),
+        ]
+        for city, state, expected_city, expected_state in test_values:
+            clean_city, clean_state = CityStateCleaner.clean_city_state(city, state)
+            self.assertEqual(clean_city, expected_city)
+            self.assertEqual(clean_state, expected_state)

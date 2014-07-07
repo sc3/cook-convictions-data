@@ -3,7 +3,6 @@ from datetime import datetime
 import logging
 
 import geopy.geocoders
-import us
 
 from django.db import models
 from django.db.models import Q
@@ -13,37 +12,33 @@ from django.contrib.gis.geos import Point
 from django.core.paginator import Paginator
 
 from convictions_data.geocoders import BatchOpenMapQuest
+from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
+from convictions_data.signals import pre_geocode_page, post_geocode_page
 
 logger = logging.getLogger(__name__)
 
 MAX_LENGTH=200
 
-CITY_NAME_ABBREVIATIONS = {
-    "CHGO": "CHICAGO",
-    "CLB": "CLUB",
-    "CNTRY": "COUNTRY",
-    "HL": "HILLS",
-    "HGTS": "HEIGHTS",
-    "HTS": "HEIGHTS",
-    "PK": "PARK",
-    "VILL": "VILLAGE",
-    "CTY": "CITY",
-}
-
 ZIPCODE_RE = re.compile(r'^\d{5}$')
 
-# Strings that represent states but are not official abbreviations
-MOCK_STATES = set(['ILL', 'I', 'MX'])
 
 class ConvictionsQuerySet(models.query.QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
 
-    def geocode(self, batch_size=100):
+    def geocode(self, batch_size=100, timeout=1):
         geocoder = BatchOpenMapQuest(
-            api_key=settings.CONVICTIONS_GEOCODER_API_KEY)
+            api_key=settings.CONVICTIONS_GEOCODER_API_KEY,
+            timeout=timeout)
         p = Paginator(self, batch_size)
         for i in p.page_range:
+            pre_geocode_page.send(sender=self.__class__,
+                page_num=i, num_pages=p.num_pages)
             self._geocode_batch(p.page(i), geocoder)
+            post_geocode_page.send(sender=self.__class__,
+                page_num=i, num_pages=p.num_pages)
+
+    def geocoded(self):
+        return self.exclude(lat=None, lon=None)
 
     def ungeocoded(self):
         return self.filter(lat=None, lon=None)
@@ -55,7 +50,7 @@ class ConvictionsQuerySet(models.query.QuerySet):
                 model.save()
 
     def has_geocodable_address(self):
-        q = Q(address="")
+        q = Q(st_address="")
         q |= Q(zipcode="")
         q |= (Q(state="") & Q(city=""))
         return self.exclude(q)
@@ -76,6 +71,10 @@ class ConvictionsQuerySet(models.query.QuerySet):
             obj.lon = loc.longitude
             obj.save()
 
+    def chilike(self):
+        qs = self.exclude(city__iexact="Chicago").exclude(city__iexact="Chicago Heights").filter(city__istartswith="ch")
+        return list(set([c['city'] for c in qs.values('city')]))
+
 
 class ConvictionManager(models.Manager):
     """Custom manager that uses ConvictionsQuerySet"""
@@ -89,6 +88,9 @@ class ConvictionManager(models.Manager):
     def ungeocoded(self):
         return self.get_query_set().ungeocoded()
 
+    def geocoded(self):
+        return self.get_query_set().geocoded()
+
     def load_from_raw(self, save=False):
         return self.get_query_set().load_from_raw(save)
 
@@ -97,7 +99,6 @@ class ConvictionManager(models.Manager):
 
     def has_geocodable_address(self):
         return self.get_query_set().has_geocodable_address()
-
 
 
 class RawConviction(models.Model):
@@ -240,8 +241,6 @@ class Conviction(models.Model):
     # Use a custom manager to add geocoding methods
     objects = ConvictionManager()
 
-    PUNCTUATION_RE = re.compile(r'[,.]+')
-    CHICAGO_RE = re.compile(r'^CH[I]{0,1}C{0,1}A{0,1}GO{0,1}$')
 
     def __init__(self, *args, **kwargs):
         super(Conviction, self).__init__(*args, **kwargs)
@@ -304,70 +303,18 @@ class Conviction(models.Model):
         return self
 
     def boundarize(self):
-        do_save = False
-        matching_municipalities = Municipality.objects.filter(municipality_name__iexact=self.city)
-        if matching_municipalities.count():
-            self.county = "Cook"
-            do_save = True
-
-        if self.lat and self.lon and self.city.upper() == "CHICAGO":
+        try:
             pnt = Point(self.lon, self.lat)
             self.community_area = CommunityArea.objects.get(boundary__contains=pnt)
-            do_save = True
-
-        if do_save:
             self.save()
+            return self.community_area
+        except CommunityArea.DoesNotExist:
+            return False
        
     @classmethod
     def _parse_city_state(cls, city_state):
-        city, state = cls._split_city_state(city_state)
-        return cls._clean_city_state(city, state)
-
-    @classmethod
-    def _split_city_state(cls, city_state):
-        city_state = cls.PUNCTUATION_RE.sub(' ', city_state)
-        bits = re.split(r'\s+', city_state.strip())
-
-        last = bits[-1]
-
-        if us.states.lookup(last) or last in MOCK_STATES:
-            state = last 
-            city_bits = bits[:-1]
-        elif len(last) >= 2 and (us.states.lookup(last[-2:]) or
-                last[-2:] in MOCK_STATES): 
-            state = last[-2:]
-            city_bits = bits[:-1] + [last[:-2]]
-        else:
-            state = ""
-            city_bits = bits
-
-        return " ".join(city_bits), state
-
-    @classmethod
-    def _clean_city_state(cls, city, state):
-        clean_city = ' '.join([cls._fix_chicago(cls._unabbreviate_city_bit(s))
-                               for s in city.split(' ')])
-
-        if state == "ILL":
-            clean_state = "IL"
-        else:
-            clean_state = state
-
-        return clean_city, clean_state
-
-    @classmethod
-    def _unabbreviate_city_bit(cls, s):
-        try:
-            return CITY_NAME_ABBREVIATIONS[s.upper()]
-        except KeyError:
-            return s
-
-    @classmethod
-    def _fix_chicago(cls, s):
-        if cls.CHICAGO_RE.match(s):
-            return "CHICAGO"
-        else:
-            return s
+        city, state = CityStateSplitter.split_city_state(city_state)
+        return CityStateCleaner.clean_city_state(city, state)
 
     @classmethod
     def _parse_zipcode(cls, zipcode):
