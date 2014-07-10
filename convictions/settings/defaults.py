@@ -44,17 +44,6 @@ ROOT_URLCONF = 'convictions.urls'
 
 WSGI_APPLICATION = 'convictions.wsgi.application'
 
-
-# Database
-# https://docs.djangoproject.com/en/1.6/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.spatialite',
-        'NAME': os.path.join(BASE_DIR, 'convictions.sqlite3'),
-    }
-}
-
 # Internationalization
 # https://docs.djangoproject.com/en/1.6/topics/i18n/
 

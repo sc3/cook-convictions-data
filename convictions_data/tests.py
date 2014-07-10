@@ -68,7 +68,9 @@ class ConvictionModelTestCase(TestCase):
             city_state="CHGO ILL",
             zipcode="60622",
             dob="19-Nov-43",
-            arrest_date="2-Jun-89"
+            arrest_date="2-Jun-89",
+            minsent="100000",
+            maxsent="100000",
         )
         conviction = Conviction(raw_conviction=raw)
         self.assertEqual(conviction.case_number, raw.case_number)
@@ -79,6 +81,32 @@ class ConvictionModelTestCase(TestCase):
         self.assertEqual(conviction.zipcode, raw.zipcode)
         self.assertEqual(conviction.dob, datetime.date(1943, 11, 19))
         self.assertEqual(conviction.arrest_date, datetime.date(1989, 6, 2))
+        self.assertEqual(conviction.minsent_years, 1) 
+        self.assertEqual(conviction.minsent_months, 0) 
+        self.assertEqual(conviction.minsent_days, 0) 
+        self.assertEqual(conviction.minsent_life, False) 
+        self.assertEqual(conviction.minsent_death, False) 
+        self.assertEqual(conviction.maxsent_years, 1) 
+        self.assertEqual(conviction.maxsent_months, 0) 
+        self.assertEqual(conviction.maxsent_days, 0) 
+        self.assertEqual(conviction.maxsent_life, False) 
+        self.assertEqual(conviction.maxsent_death, False) 
+
+    def test_parse_sentence(self):
+        test_values = [
+            ("0", 0, 0, 0, False, False),
+            ("5700000", 57, 0, 0, False, False),
+            ("88888888", None, None, None, True, False),
+            ("99999999", None, None, None, False, True),
+        ]
+
+        for val, e_yr, e_mon, e_day, e_life, e_death in test_values:
+            yr, mon, day, life, death = Conviction._parse_sentence(val)
+            self.assertEqual(yr, e_yr)
+            self.assertEqual(mon, e_mon)
+            self.assertEqual(day, e_day)
+            self.assertEqual(life, e_life)
+            self.assertEqual(death, e_death)
 
 
 class ConvictionsModelWithMunicipalitiesTestCase(TestCase):

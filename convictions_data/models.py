@@ -49,6 +49,14 @@ class ConvictionsQuerySet(models.query.QuerySet):
             if save:
                 model.save()
 
+        return self
+
+    def load_field_from_raw(self, field_name):
+        for model in self:
+            model.load_field_from_raw(field_name)
+
+        return self
+
     def has_geocodable_address(self):
         q = Q(st_address="")
         q |= Q(zipcode="")
@@ -93,6 +101,9 @@ class ConvictionManager(models.Manager):
 
     def load_from_raw(self, save=False):
         return self.get_query_set().load_from_raw(save)
+
+    def load_field_from_raw(self, field_name, save=False):
+        return self.get_query_set().load_field_from_raw(field_name, save)
 
     def has_bad_address(self):
         return self.get_query_set().has_bad_address()
@@ -229,8 +240,16 @@ class Conviction(models.Model):
     ammndchrgdescr = models.CharField(max_length=50)
     ammndchrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     ammndchrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
-    minsent = models.IntegerField(null=True)
-    maxsent = models.IntegerField(null=True)
+    minsent_years = models.IntegerField(null=True)
+    minsent_months = models.IntegerField(null=True)
+    minsent_days = models.IntegerField(null=True)
+    minsent_life = models.BooleanField(default=False)
+    minsent_death = models.BooleanField(default=False)
+    maxsent_years = models.IntegerField(null=True)
+    maxsent_months = models.IntegerField(null=True)
+    maxsent_days = models.IntegerField(null=True)
+    maxsent_life = models.BooleanField(default=False)
+    maxsent_death = models.BooleanField(default=False)
     amtoffine = models.IntegerField(null=True)
     
     # Spatial fields
@@ -280,7 +299,16 @@ class Conviction(models.Model):
                 # Skip reverse name on related field
                 continue
 
-            val = getattr(self.raw_conviction, field_name)
+            self.load_field_from_raw(field_name)
+
+        return self
+
+    def load_field_from_raw(self, field_name):
+        val = getattr(self.raw_conviction, field_name)
+        try:
+            loader = getattr(self, "_load_field_{}".format(field_name))
+            loader(val)
+        except AttributeError:
             try:
                 parser = getattr(self, "_parse_{}".format(field_name))
                 val = parser(val)
@@ -295,11 +323,22 @@ class Conviction(models.Model):
                     val = None
 
             setattr(self, field_name, val) 
+        
+        return self
 
-        self.city, self.state = self._parse_city_state(self.raw_conviction.city_state)
+    def _load_field_city_state(self, val):
+        self.city, self.state = self._parse_city_state(val)
         if not self.state:
             self.state = self._detect_state(self.city)
 
+        return self
+
+    def _load_field_minsent(self, val):
+        self.minsent_years, self.minsent_months, self.minsent_days, self.minsent_life, self.minsent_death = self._parse_sentence(val)
+        return self
+
+    def _load_field_maxsent(self, val):
+        self.maxsent_years, self.maxsent_months, self.maxsent_days, self.maxsent_life, self.maxsent_death = self._parse_sentence(val)
         return self
 
     def boundarize(self):
@@ -405,12 +444,18 @@ class Conviction(models.Model):
         return cls._parse_chrgclass(s)
 
     @classmethod
-    def _parse_minsent(cls, s):
-        return cls._parse_int(s)
+    def _parse_sentence(cls, s):
+        if s == "88888888":
+            return None, None, None, True, False
+        
+        if s == "99999999":
+            return None, None, None, False, True
 
-    @classmethod
-    def _parse_maxsent(cls, s):
-        return cls._parse_int(s)
+        val = s.zfill(8)
+        year = int(val[0:3])
+        mon = int(val[3:5])
+        day = int(val[5:8])
+        return year, mon, day, False, False
 
     @classmethod
     def _parse_amtoffine(cls, s):
