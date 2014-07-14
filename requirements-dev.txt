@@ -1,1 +1,6 @@
 mock
+ipython
+django-extensions
+pyzmq
+jinja2
+tornado
