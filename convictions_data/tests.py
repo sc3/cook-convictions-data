@@ -1,11 +1,67 @@
 import datetime
+from mock import patch
+import unittest
 
 from django.conf import settings
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
+
+from ilcs import ILCSSection
 
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.models import Conviction, RawConviction
+from convictions_data import statute
+
+try:
+    from django.test.runner import DiscoverRunner as BaseRunner
+except ImportError:
+    # Django < 1.6 fallback
+    from django.test.simple import DjangoTestSuiteRunner as BaseRunner
+
+# Database-less test runner from
+# http://www.caktusgroup.com/blog/2013/10/02/skipping-test-db-creation/ 
+class NoDatabaseMixin(object):
+    """
+    Test runner mixin which skips the DB setup/teardown
+    when there are no subclasses of TransactionTestCase to improve the speed
+    of running the tests.
+    """
+
+    def build_suite(self, *args, **kwargs):
+        """
+        Check if any of the tests to run subclasses TransactionTestCase.
+        """
+        suite = super(NoDatabaseMixin, self).build_suite(*args, **kwargs)
+        self._needs_db = any([isinstance(test, TransactionTestCase) for test in suite])
+        return suite
+
+    def setup_databases(self, *args, **kwargs):
+        """
+        Skip test creation if not needed. Ensure that touching the DB raises and
+        error.
+        """
+        if self._needs_db:
+            return super(NoDatabaseMixin, self).setup_databases(*args, **kwargs)
+        if self.verbosity >= 1:
+            print('No DB tests detected. Skipping Test DB creation...')
+        self._db_patch = patch('django.db.backends.util.CursorWrapper')
+        self._db_mock = self._db_patch.start()
+        self._db_mock.side_effect = RuntimeError('No testing the database!')
+        return None
+
+    def teardown_databases(self, *args, **kwargs):
+        """
+        Remove cursor patch.
+        """
+        if self._needs_db:
+            return super(NoDatabaseMixin, self).teardown_databases(*args, **kwargs)
+        self._db_patch.stop()
+        return None
+
+
+class FastTestRunner(NoDatabaseMixin, BaseRunner):
+    """Actual test runner sub-class to make use of the mixin."""
+
 
 class ConvictionModelTestCase(TestCase):
     def test_parse_city_state(self):
@@ -197,3 +253,39 @@ class CityStateCleanerTestCase(SimpleTestCase):
             clean_city, clean_state = CityStateCleaner.clean_city_state(city, state)
             self.assertEqual(clean_city, expected_city)
             self.assertEqual(clean_state, expected_state)
+
+
+class StatuteTestCase(unittest.TestCase):
+    def test_parse_statute(self):
+        test_values = [
+            #('38-8-4(38-9-1)', ('38', '8-4', '(38-9-1)')),
+            ('38 9-1E', '720', '5', '9-1'),
+            ('56.5-704-D', '720', '550', '4'),
+            ('56.5 1401 (D)', '720', '570', '401'),
+            ('56.5-1401-C-2', '720', '570', '401'),
+            ('38-19-1-A', '720', '5', '19-1'),
+            ('38-9-1-A(1)', '720', '5', '9-1'),
+            ('56.5.1407-B(2)', '720', '570', '407'),
+            ('38-16A-3A', '720', '5', '16A-3'),
+            ('720 5/8-2 (18-2)', '720', '5', '8-2'),
+        ]
+        for s, chapter, act_prefix, section in test_values:
+            ilcs_sections, paragraph = statute.parse_statute(s)
+            ilcs_section = ilcs_sections[0]
+            self.assertEqual(ilcs_section.chapter, chapter)
+            self.assertEqual(ilcs_section.act_prefix, act_prefix)
+            self.assertEqual(ilcs_section.section, section)
+
+    def test_get_iucr(self):
+        test_values = [
+            ('38 9-1E', '0110'), # Homicide
+            ('56.5-704-D', '1812'), # Possession of cannibus > 30gm
+            ('720-570/402(c)', '2020'),
+            ('720-570/402(a)(2)(A)', '2020'),
+            ('430-65/2(A)(1)4', '1460'),
+            ('730-150/3', '4505'),
+            ('720-250/8', '1150'),
+        ]
+        for s, iucr_code in test_values:
+            iucr_offense = statute.get_iucr(s)[0]
+            self.assertEqual(iucr_offense.code, iucr_code)

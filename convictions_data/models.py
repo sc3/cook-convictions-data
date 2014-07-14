@@ -13,6 +13,7 @@ from django.core.paginator import Paginator
 
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
+from convictions_data.statute import get_iucr
 from convictions_data.signals import pre_geocode_page, post_geocode_page
 
 logger = logging.getLogger(__name__)
@@ -235,11 +236,15 @@ class Conviction(models.Model):
     chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     chrgtype2 = models.CharField(max_length=15, choices=CHRGTYPE2_CHOICES)
     chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
+    iucr_code = models.CharField(max_length=4, default="")
+    iucr_category = models.CharField(max_length=50, default="")
     chrgdisp = models.CharField(max_length=30)
     ammndchargstatute = models.CharField(max_length=50)
     ammndchrgdescr = models.CharField(max_length=50)
     ammndchrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     ammndchrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
+    ammnd_iucr_code = models.CharField(max_length=4, default="")
+    ammnd_iucr_category = models.CharField(max_length=50, default="")
     minsent_years = models.IntegerField(null=True)
     minsent_months = models.IntegerField(null=True)
     minsent_days = models.IntegerField(null=True)
@@ -341,6 +346,18 @@ class Conviction(models.Model):
         self.maxsent_years, self.maxsent_months, self.maxsent_days, self.maxsent_life, self.maxsent_death = self._parse_sentence(val)
         return self
 
+    def _load_statute(self, val):
+        self.statute = val
+        if val:
+            self.iucr_code = get_iucr(val)
+        return self
+
+    def _load_ammndchargstatute(self, val):
+        self.ammndchargstatute = val
+        if val:
+            self.iucr_code = get_iucr(val)
+        return self
+
     def boundarize(self):
         try:
             pnt = Point(self.lon, self.lat)
@@ -349,6 +366,7 @@ class Conviction(models.Model):
             return self.community_area
         except CommunityArea.DoesNotExist:
             return False
+
        
     @classmethod
     def _parse_city_state(cls, city_state):
