@@ -1,4 +1,4 @@
 Django>=1.6.5
 us>=0.6
 geopy>=0.99
-South>=0.8
+South>=0.8,<1.0
