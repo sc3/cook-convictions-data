@@ -236,15 +236,11 @@ class Conviction(models.Model):
     chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     chrgtype2 = models.CharField(max_length=15, choices=CHRGTYPE2_CHOICES)
     chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
-    iucr_code = models.CharField(max_length=4, default="")
-    iucr_category = models.CharField(max_length=50, default="")
     chrgdisp = models.CharField(max_length=30)
     ammndchargstatute = models.CharField(max_length=50)
     ammndchrgdescr = models.CharField(max_length=50)
     ammndchrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     ammndchrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
-    ammnd_iucr_code = models.CharField(max_length=4, default="")
-    ammnd_iucr_category = models.CharField(max_length=50, default="")
     minsent_years = models.IntegerField(null=True)
     minsent_months = models.IntegerField(null=True)
     minsent_days = models.IntegerField(null=True)
@@ -256,6 +252,12 @@ class Conviction(models.Model):
     maxsent_life = models.BooleanField(default=False)
     maxsent_death = models.BooleanField(default=False)
     amtoffine = models.IntegerField(null=True)
+
+    final_statute = models.CharField(max_length=50, default="",
+        help_text="Field to make querying easier.  Set to the value of "
+        "ammndchargstatute if present, otherwise set to the value of statute")
+    iucr_code = models.CharField(max_length=4, default="")
+    iucr_category = models.CharField(max_length=50, default="")
     
     # Spatial fields
     lat = models.FloatField(null=True)
@@ -350,12 +352,14 @@ class Conviction(models.Model):
         self.statute = val
         if val:
             self.iucr_code = get_iucr(val)
+            self.final_statute = val
         return self
 
     def _load_ammndchargstatute(self, val):
         self.ammndchargstatute = val
         if val:
             self.iucr_code = get_iucr(val)
+            self.final_statute = val
         return self
 
     def boundarize(self):

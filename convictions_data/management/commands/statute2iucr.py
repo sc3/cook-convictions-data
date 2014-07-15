@@ -17,34 +17,32 @@ class Command(BaseCommand):
             for conviction in Conviction.objects.all():
                 changed = False
 
-                try:
-                    if conviction.statute:
-                        offenses = get_iucr(conviction.statute)
-                        if len(offenses) == 1:
-                            conviction.iucr_code = offenses[0].code
-                            conviction.iucr_category = offenses[0].offense_category
-                            changed = True
-                        else:
-                            logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(conviction.statute))
+                if conviction.ammndchargstatute:
+                    conviction.final_statute = conviction.ammndchargstatute
+                    changed = True
+                elif conviction.statute:
+                    conviction.final_statute = conviction.statute
+                    changed = True
 
-                    if conviction.ammndchargstatute:
-                        offenses = get_iucr(conviction.ammndchargstatute)
+                if conviction.final_statute:
+                    try:
+                        if conviction.final_statute:
+                            offenses = get_iucr(conviction.final_statute)
+                            if len(offenses) == 1:
+                                conviction.iucr_code = offenses[0].code
+                                conviction.iucr_category = offenses[0].offense_category
+                                changed = True
+                            else:
+                                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(conviction.final_statute))
 
-                        if len(offenses) == 1:
-                            conviction.ammnd_iucr_code = offenses[0].code
-                            conviction.ammnd_iucr_category = offenses[0].offense_category
-                            changed = True
-                        else:
-                            logger.warn("Multiple matching IUCR offenses found for ammended statute '{}'".format(conviction.ammndchargstatute))
+                    except IUCRLookupError as e:
+                        logger.warn(e)
+                    except ILCSLookupError as e:
+                        logger.warn(e)
+                    except AssertionError as e:
+                        logger.warn(e)
+                    except StatuteFormatError as e:
+                        logger.warn(e)
 
-                    if changed:
-                        conviction.save()
-
-                except IUCRLookupError as e:
-                    logger.warn(e)
-                except ILCSLookupError as e:
-                    logger.warn(e)
-                except AssertionError as e:
-                    logger.warn(e)
-                except StatuteFormatError as e:
-                    logger.warn(e)
+                if changed:
+                    conviction.save()
