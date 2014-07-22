@@ -23,7 +23,7 @@ MAX_LENGTH=200
 ZIPCODE_RE = re.compile(r'^\d{5}$')
 
 
-class ConvictionsQuerySet(models.query.QuerySet):
+class DispositionQuerySet(models.query.QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
 
     def geocode(self, batch_size=100, timeout=1):
@@ -85,11 +85,11 @@ class ConvictionsQuerySet(models.query.QuerySet):
         return list(set([c['city'] for c in qs.values('city')]))
 
 
-class ConvictionManager(models.Manager):
-    """Custom manager that uses ConvictionsQuerySet"""
+class DispositionManager(models.Manager):
+    """Custom manager that uses DispositionQuerySet"""
 
     def get_query_set(self):
-        return ConvictionsQuerySet(self.model, using=self._db)
+        return DispositionQuerySet(self.model, using=self._db)
 
     def geocode(self):
         return self.get_query_set().geocode()
@@ -113,8 +113,8 @@ class ConvictionManager(models.Manager):
         return self.get_query_set().has_geocodable_address()
 
 
-class RawConviction(models.Model):
-    """Conviction record loaded verbatim from the raw CSV"""
+class RawDisposition(models.Model):
+    """Disposition record loaded verbatim from the raw CSV"""
     # case_number is not unique 
     case_number = models.CharField(max_length=MAX_LENGTH)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
@@ -146,8 +146,8 @@ class RawConviction(models.Model):
     amtoffine = models.CharField(max_length=MAX_LENGTH)
 
 
-class Conviction(models.Model):
-    """Conviction record with cleaned/transformed data"""
+class Disposition(models.Model):
+    """Disposition record with cleaned/transformed data"""
 
     # Choices for validation of various fields
     SEX_CHOICES = (
@@ -205,7 +205,7 @@ class Conviction(models.Model):
 
     CHRGCLASS_VALUES = [v for v,c in CHRGCLASS_CHOICES]
 
-    raw_conviction = models.ForeignKey(RawConviction)
+    raw_disposition = models.ForeignKey(RawDisposition)
 
     # ID Fields 
     case_number = models.CharField(max_length=MAX_LENGTH)
@@ -265,11 +265,11 @@ class Conviction(models.Model):
     community_area = models.ForeignKey('CommunityArea', null=True)
 
     # Use a custom manager to add geocoding methods
-    objects = ConvictionManager()
+    objects = DispositionManager()
 
 
     def __init__(self, *args, **kwargs):
-        super(Conviction, self).__init__(*args, **kwargs)
+        super(Disposition, self).__init__(*args, **kwargs)
         if self.pk is None:
             # New model, populate it's fields by parsing the values from
             self.load_from_raw()
@@ -300,9 +300,9 @@ class Conviction(models.Model):
         return ",".join(bits)
 
     def load_from_raw(self):
-        """Load fields from related RawConviction model"""
-        for field_name in RawConviction._meta.get_all_field_names():
-            if field_name == "conviction":
+        """Load fields from related RawDisposition model"""
+        for field_name in RawDisposition._meta.get_all_field_names():
+            if field_name == "disposition":
                 # Skip reverse name on related field
                 continue
 
@@ -311,7 +311,7 @@ class Conviction(models.Model):
         return self
 
     def load_field_from_raw(self, field_name):
-        val = getattr(self.raw_conviction, field_name)
+        val = getattr(self.raw_disposition, field_name)
         try:
             loader = getattr(self, "_load_field_{}".format(field_name))
             loader(val)
@@ -322,9 +322,9 @@ class Conviction(models.Model):
             except AttributeError:
                 pass
             except ValueError as e:
-                msg = ("Error when parsing '{}' from RawConviction with case "
+                msg = ("Error when parsing '{}' from RawDisposition with case "
                        "number '{}': {}")
-                msg = msg.format(field_name, self.raw_conviction.case_number, e)
+                msg = msg.format(field_name, self.raw_disposition.case_number, e)
                 logger.warning(msg)
                 if 'date' in field_name or field_name == 'dob':
                     val = None

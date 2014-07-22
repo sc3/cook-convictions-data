@@ -4,7 +4,7 @@ import logging
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
-from convictions_data.models import Conviction
+from convictions_data.models import Disposition
 from convictions_data.signals import pre_geocode_page, post_geocode_page
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def handle_post_geocode_page(sender, **kwargs):
     print("Done geocoding page {} of {}.".format(page_num, num_pages))
 
 class Command(BaseCommand):
-    help = "Geocode conviction records"
+    help = "Geocode disposition records"
 
     option_list = BaseCommand.option_list + (
         make_option('--timeout',
@@ -39,5 +39,5 @@ class Command(BaseCommand):
         # have lat/lon values
         cook_q = Q(county="Cook", state="IL")
         chi_zip_q = Q(zipcode__startswith="606")
-        models = Conviction.objects.filter(cook_q | chi_zip_q).ungeocoded().has_geocodable_address()
+        models = Disposition.objects.filter(cook_q | chi_zip_q).ungeocoded().has_geocodable_address()
         models.geocode(timeout=options['timeout'])

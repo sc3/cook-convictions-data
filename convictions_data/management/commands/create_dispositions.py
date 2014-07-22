@@ -2,10 +2,10 @@ from optparse import make_option
 
 from django.core.management.base import BaseCommand
 
-from convictions_data.models import Conviction, RawConviction
+from convictions_data.models import Disposition, RawDisposition
 
 class Command(BaseCommand):
-    help = "Create clean conviction records from raw data"
+    help = "Create clean disposition records from raw data"
 
     option_list = BaseCommand.option_list + (
         make_option('--delete',
@@ -18,10 +18,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if options['delete']:
-            Conviction.objects.all().delete()
+            Disposition.objects.all().delete()
 
         models = []
-        for rc in RawConviction.objects.all():
-            models.append(Conviction(raw_conviction=rc))
+        for rd in RawDisposition.objects.all():
+            models.append(Disposition(raw_disposition=rd))
 
-        Conviction.objects.bulk_create(models)
+        Disposition.objects.bulk_create(models)

@@ -5,11 +5,9 @@ import unittest
 from django.conf import settings
 from django.test import SimpleTestCase, TestCase, TransactionTestCase
 
-from ilcs import ILCSSection
-
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.geocoders import BatchOpenMapQuest
-from convictions_data.models import Conviction, RawConviction
+from convictions_data.models import Disposition, RawDisposition
 from convictions_data import statute
 
 try:
@@ -63,7 +61,7 @@ class FastTestRunner(NoDatabaseMixin, BaseRunner):
     """Actual test runner sub-class to make use of the mixin."""
 
 
-class ConvictionModelTestCase(TestCase):
+class DispositionModelTestCase(TestCase):
     def test_parse_city_state(self):
         test_values = [
             ("EVANSTON ILL.", "EVANSTON", "IL"),
@@ -78,7 +76,7 @@ class ConvictionModelTestCase(TestCase):
             ("MICHIGAN CTYIN", "MICHIGAN CITY", "IN"),
         ]
         for city_state, expected_city, expected_state in test_values:
-            city, state = Conviction._parse_city_state(city_state)
+            city, state = Disposition._parse_city_state(city_state)
             self.assertEqual(city, expected_city)
             self.assertEqual(state, expected_state)
 
@@ -90,10 +88,10 @@ class ConvictionModelTestCase(TestCase):
             ("13-Jun-43", datetime.date(1943, 6, 13)),
         ]
         for datestr, expected in test_values:
-            self.assertEqual(Conviction._parse_date(datestr), expected)
+            self.assertEqual(Disposition._parse_date(datestr), expected)
 
     def test_load_from_raw(self):
-        raw = RawConviction.objects.create(
+        raw = RawDisposition.objects.create(
             case_number="XXXXXXX",
             sequence_number="1",
             st_address="707 W WAVELAND",
@@ -102,22 +100,22 @@ class ConvictionModelTestCase(TestCase):
             dob="19-Nov-43",
             arrest_date="2-Jun-89"
         )
-        conviction = Conviction(raw_conviction=raw)
-        conviction.load_from_raw()
-        self.assertEqual(conviction.case_number, raw.case_number)
-        self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.st_address, raw.st_address)
-        self.assertEqual(conviction.city, "CHICAGO")
-        self.assertEqual(conviction.state, "IL")
-        self.assertEqual(conviction.zipcode, raw.zipcode)
-        self.assertEqual(conviction.dob, datetime.date(1943, 11, 19))
-        self.assertEqual(conviction.arrest_date, datetime.date(1989, 6, 2))
+        disposition = Disposition(raw_disposition=raw)
+        disposition.load_from_raw()
+        self.assertEqual(disposition.case_number, raw.case_number)
+        self.assertEqual(disposition.sequence_number, raw.sequence_number)
+        self.assertEqual(disposition.st_address, raw.st_address)
+        self.assertEqual(disposition.city, "CHICAGO")
+        self.assertEqual(disposition.state, "IL")
+        self.assertEqual(disposition.zipcode, raw.zipcode)
+        self.assertEqual(disposition.dob, datetime.date(1943, 11, 19))
+        self.assertEqual(disposition.arrest_date, datetime.date(1989, 6, 2))
 
     def test_auto_load_from_raw(self):
         """
-        Test that load_from_raw is run when constructing new Conviction models
+        Test that load_from_raw is run when constructing new Disposition models
         """
-        raw = RawConviction.objects.create(
+        raw = RawDisposition.objects.create(
             case_number="XXXXXXX",
             sequence_number="1",
             st_address="707 W WAVELAND",
@@ -128,25 +126,25 @@ class ConvictionModelTestCase(TestCase):
             minsent="100000",
             maxsent="100000",
         )
-        conviction = Conviction(raw_conviction=raw)
-        self.assertEqual(conviction.case_number, raw.case_number)
-        self.assertEqual(conviction.sequence_number, raw.sequence_number)
-        self.assertEqual(conviction.st_address, raw.st_address)
-        self.assertEqual(conviction.city, "CHICAGO")
-        self.assertEqual(conviction.state, "IL")
-        self.assertEqual(conviction.zipcode, raw.zipcode)
-        self.assertEqual(conviction.dob, datetime.date(1943, 11, 19))
-        self.assertEqual(conviction.arrest_date, datetime.date(1989, 6, 2))
-        self.assertEqual(conviction.minsent_years, 1) 
-        self.assertEqual(conviction.minsent_months, 0) 
-        self.assertEqual(conviction.minsent_days, 0) 
-        self.assertEqual(conviction.minsent_life, False) 
-        self.assertEqual(conviction.minsent_death, False) 
-        self.assertEqual(conviction.maxsent_years, 1) 
-        self.assertEqual(conviction.maxsent_months, 0) 
-        self.assertEqual(conviction.maxsent_days, 0) 
-        self.assertEqual(conviction.maxsent_life, False) 
-        self.assertEqual(conviction.maxsent_death, False) 
+        disposition = Disposition(raw_disposition=raw)
+        self.assertEqual(disposition.case_number, raw.case_number)
+        self.assertEqual(disposition.sequence_number, raw.sequence_number)
+        self.assertEqual(disposition.st_address, raw.st_address)
+        self.assertEqual(disposition.city, "CHICAGO")
+        self.assertEqual(disposition.state, "IL")
+        self.assertEqual(disposition.zipcode, raw.zipcode)
+        self.assertEqual(disposition.dob, datetime.date(1943, 11, 19))
+        self.assertEqual(disposition.arrest_date, datetime.date(1989, 6, 2))
+        self.assertEqual(disposition.minsent_years, 1) 
+        self.assertEqual(disposition.minsent_months, 0) 
+        self.assertEqual(disposition.minsent_days, 0) 
+        self.assertEqual(disposition.minsent_life, False) 
+        self.assertEqual(disposition.minsent_death, False) 
+        self.assertEqual(disposition.maxsent_years, 1) 
+        self.assertEqual(disposition.maxsent_months, 0) 
+        self.assertEqual(disposition.maxsent_days, 0) 
+        self.assertEqual(disposition.maxsent_life, False) 
+        self.assertEqual(disposition.maxsent_death, False) 
 
     def test_parse_sentence(self):
         test_values = [
@@ -157,7 +155,7 @@ class ConvictionModelTestCase(TestCase):
         ]
 
         for val, e_yr, e_mon, e_day, e_life, e_death in test_values:
-            yr, mon, day, life, death = Conviction._parse_sentence(val)
+            yr, mon, day, life, death = Disposition._parse_sentence(val)
             self.assertEqual(yr, e_yr)
             self.assertEqual(mon, e_mon)
             self.assertEqual(day, e_day)
@@ -165,7 +163,7 @@ class ConvictionModelTestCase(TestCase):
             self.assertEqual(death, e_death)
 
 
-class ConvictionsModelWithMunicipalitiesTestCase(TestCase):
+class DispositionsModelWithMunicipalitiesTestCase(TestCase):
     fixtures = ['test_municipalities.json']
 
     def test_detect_state(self):
@@ -173,7 +171,7 @@ class ConvictionsModelWithMunicipalitiesTestCase(TestCase):
             ("PALOS HILLS", "IL"),
         ]
         for city, expected_state in test_values:
-            state = Conviction._detect_state(city)
+            state = Disposition._detect_state(city)
             self.assertEqual(state, expected_state)
 
 
@@ -202,9 +200,9 @@ class BatchOpenMapQuestTestCase(TestCase):
             self.assertAlmostEqual(loc.longitude, lng, places=1)
 
 
-class ConvictionGeocodingTestCase(TestCase):
+class DispositionGeocodingTestCase(TestCase):
     def test_geocode(self):
-        raw = RawConviction.objects.create(
+        raw = RawDisposition.objects.create(
             case_number="XXXXXXX",
             sequence_number="1",
             st_address="3411 W DIVERSEY AVE",
@@ -213,12 +211,12 @@ class ConvictionGeocodingTestCase(TestCase):
             dob="19-Nov-43",
             arrest_date="2-Jun-89"
         )
-        conviction = Conviction(raw_conviction=raw)
-        conviction.save()
-        Conviction.objects.filter(id=conviction.id).geocode()
-        conviction = Conviction.objects.get(id=conviction.id)
-        self.assertAlmostEqual(conviction.lat, 41.931631, places=1)
-        self.assertAlmostEqual(conviction.lon, -87.726857, places=1)
+        disposition = Disposition(raw_disposition=raw)
+        disposition.save()
+        Disposition.objects.filter(id=disposition.id).geocode()
+        disposition = Disposition.objects.get(id=disposition.id)
+        self.assertAlmostEqual(disposition.lat, 41.931631, places=1)
+        self.assertAlmostEqual(disposition.lon, -87.726857, places=1)
 
 class CityStateSplitterTestCase(SimpleTestCase):
     def test_split_city_state(self):
