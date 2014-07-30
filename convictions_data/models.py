@@ -1,11 +1,11 @@
-import re
 from datetime import datetime
 import logging
+import re
 
 import geopy.geocoders
 
 from django.db import models
-from django.db.models import Q
+from django.db.models import Q, Min
 from django.contrib.gis.db import models as geo_models
 from django.conf import settings
 from django.contrib.gis.geos import Point
@@ -13,6 +13,7 @@ from django.core.paginator import Paginator
 
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
+from convictions_data.statute import get_iucr
 from convictions_data.signals import pre_geocode_page, post_geocode_page
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,12 @@ MAX_LENGTH=200
 
 ZIPCODE_RE = re.compile(r'^\d{5}$')
 
+START_DATE = datetime(month=1, day=1, year=2005)
+"""
+The date that our data begins.
+"""
 
-class ConvictionsQuerySet(models.query.QuerySet):
+class DispositionQuerySet(models.query.QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
 
     def geocode(self, batch_size=100, timeout=1):
@@ -48,6 +53,14 @@ class ConvictionsQuerySet(models.query.QuerySet):
             model.load_from_raw()
             if save:
                 model.save()
+
+        return self
+
+    def load_field_from_raw(self, field_name):
+        for model in self:
+            model.load_field_from_raw(field_name)
+
+        return self
 
     def has_geocodable_address(self):
         q = Q(st_address="")
@@ -75,12 +88,177 @@ class ConvictionsQuerySet(models.query.QuerySet):
         qs = self.exclude(city__iexact="Chicago").exclude(city__iexact="Chicago Heights").filter(city__istartswith="ch")
         return list(set([c['city'] for c in qs.values('city')]))
 
+    def in_analysis(self):
+        # Limit records in our analysis to those with an initial date from 2005
+        # or later and an initial disposition date from 2005 or later
+        return self.filter(initial_date__gte=START_DATE,
+            chrgdispdate__gte=START_DATE)
 
-class ConvictionManager(models.Manager):
-    """Custom manager that uses ConvictionsQuerySet"""
+    def first_chrgdispdates(self):
+        """
+        Return a list of case numbers and the first charge disposition date
+        for that case.
+        """
+        return self.values('case_number')\
+            .annotate(first_chrgdispdate=Min('chrgdispdate'))\
+            .values_list('case_number', 'first_chrgdispdate')
+
+    def from_initial_chrgdispdate(self):
+        """
+        Filter this queryset to only dispositions from the first court date.
+
+        This produces a SQL query similar to:
+
+        SELECT * 
+        FROM convictions_data_disposition 
+        WHERE EXISTS(SELECT case_number
+            FROM convictions_data_disposition d2
+            WHERE d2.initial_date >= '2005-01-01' 
+            AND d2.chrgdispdate > '2005-01-01'
+            AND d2.case_number = "convictions_data_disposition"."case_number"
+            GROUP BY case_number
+            HAVING MIN(d2.chrgdispdate) = "convictions_data_disposition".chrgdispdate);
+        """
+        start_date = START_DATE.strftime("%Y-%m-%d")
+        extra_where = ("EXISTS(SELECT case_number "
+            "FROM convictions_data_disposition d2 "
+            "WHERE d2.initial_date >= '{}' "
+            "AND d2.chrgdispdate > '{}' "
+            "AND d2.case_number = \"convictions_data_disposition\".\"case_number\" "
+            "GROUP BY case_number "
+            "HAVING  MIN(d2.chrgdispdate) = \"convictions_data_disposition\".chrgdispdate)")
+        extra_where = extra_where.format(start_date, start_date)
+        return self.extra(where=[extra_where])
+
+    CONVICTION_IMPORT_FIELDS = [ 
+        'case_number',
+        'chrgdispdate',
+        'city',
+        'community_area',
+        'county',
+        'ctlbkngno',
+        'chrgdisp',
+        'dob',
+        'fbiidno',
+        'fgrprntno',
+        'final_statute',
+        'id',
+        'iucr_category',
+        'iucr_code',
+        'sex',
+        'st_address',
+        'state',
+        'statepoliceid',
+        'zipcode',
+    ]
+
+    def create_convictions(self):
+        convictions = []
+        disp_ids = []
+        conviction = None
+        case_number = None
+        # Counter of number of dispositions we've processed, for logging
+        i = 1
+
+        # Build a cache of Community areas
+        community_area_cache = {ca.id: ca for ca in CommunityArea.objects.all()}
+
+        # Get all dispositions from the first court date for a case
+        # We use values so we can pass the dictionary as keyword arguments
+        # to construct a Conviction model
+        initial_dispositions = self.from_initial_chrgdispdate()\
+                .values(*self.CONVICTION_IMPORT_FIELDS)\
+                .order_by('case_number', 'final_statute')
+        num_dispositions = initial_dispositions.count()
+
+        for disp in initial_dispositions:
+            logger.info("Processing disposition {}/{}".format(i,
+                num_dispositions))
+            if disp['case_number'] != case_number:
+                case_number = disp['case_number']
+
+                if len(disp_ids):
+                    # There are still some dispositions where the conviction field
+                    # hasn't been updated.  Update these.
+                    Disposition.objects.filter(id__in=disp_ids).update(conviction=conviction)
+                # Within each case, we'll need to keep track of which statutes
+                # and disposition/statute pairs we've seen to know when to create
+                # a new disposition
+                statute_seen = set()
+                disp_seen = set()
+                conviction = None
+
+                # A list to hold the disposition primary keys that will get rolled
+                # up into a single conviction. We do this so we can update the
+                # disposition models with the relationship in a single query instead
+                # of one per record.
+                disp_ids = []
+
+            # Save the disposition ID for updating our foreign key later
+            disp_ids.append(disp['id'])
+
+
+            if disp['community_area'] is not None:
+                # Convert community area ids to community area objects
+                disp['community_area'] = community_area_cache[disp['community_area']]
+               
+            statute_disposition = (disp['final_statute'], disp['chrgdisp'])
+            if (disp['final_statute'] not in statute_seen or 
+                statute_disposition in disp_seen):
+                # There are two cases where we'll create a new conviction
+                # and update the conviction field on the disposition models:
+                #
+                # 1. If we haven't seen this statute in this case so far.
+                # 2. If we've seen this statute/disposition pairing before,
+                #    which we interpret as multiple counts of the same 
+                #    charge.
+
+                if conviction is not None:
+                    # We've already created a conviction for this case.
+                    # Before we create the next one, update the Disposition
+                    # models we've seen so far by setting their conviction
+                    # field to the previously created conviction.
+                    Disposition.objects.filter(id__in=disp_ids).update(conviction=conviction)
+                    disp_ids = []
+
+                # Create the conviction model and set the conviction field
+                # on the disposition models that were rolled up into this
+                # conviction.
+                #
+                # The way we have to do this is slow because we have to
+                # create each conviction individually.  Bulk create would be
+                # faster, but the id fields of the created models aren't
+                # populated, so we can't update the relationship on the
+                # disposition models.
+                # 
+                # See https://code.djangoproject.com/ticket/19527
+
+                # Remove some keys from our disposition dictionary so we can 
+                # just use the rest of the values to pass to the constructor
+                # for the Conviction model
+                del disp['id']
+                del disp['chrgdisp']
+
+                conviction = Conviction.objects.create(**disp)
+                logger.info("Created conviction {}".format(conviction))
+
+                # Add the newly-created conviction to the list that will
+                # ultimately be returned
+                convictions.append(conviction)
+
+            disp_seen.add(statute_disposition)
+            statute_seen.add(disp['final_statute'])
+
+            i += 1
+
+        return convictions
+
+
+class DispositionManager(models.Manager):
+    """Custom manager that uses DispositionQuerySet"""
 
     def get_query_set(self):
-        return ConvictionsQuerySet(self.model, using=self._db)
+        return DispositionQuerySet(self.model, using=self._db)
 
     def geocode(self):
         return self.get_query_set().geocode()
@@ -94,15 +272,21 @@ class ConvictionManager(models.Manager):
     def load_from_raw(self, save=False):
         return self.get_query_set().load_from_raw(save)
 
+    def load_field_from_raw(self, field_name, save=False):
+        return self.get_query_set().load_field_from_raw(field_name, save)
+
     def has_bad_address(self):
         return self.get_query_set().has_bad_address()
 
     def has_geocodable_address(self):
         return self.get_query_set().has_geocodable_address()
 
+    def in_analysis(self):
+        return self.get_query_set().in_analysis()
 
-class RawConviction(models.Model):
-    """Conviction record loaded verbatim from the raw CSV"""
+
+class RawDisposition(models.Model):
+    """Disposition record loaded verbatim from the raw CSV"""
     # case_number is not unique 
     case_number = models.CharField(max_length=MAX_LENGTH)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
@@ -134,74 +318,75 @@ class RawConviction(models.Model):
     amtoffine = models.CharField(max_length=MAX_LENGTH)
 
 
-class Conviction(models.Model):
-    """Conviction record with cleaned/transformed data"""
+# Choices for validation of various fields
+SEX_CHOICES = (
+  ('male', 'Male'),
+  ('female', 'Female'),
+)
 
-    # Choices for validation of various fields
-    SEX_CHOICES = (
-      ('male', 'Male'),
-      ('female', 'Female'),
-    )
+CHRGTYPE_CHOICES = (
+    ('A', 'A'),
+    ('C', 'C'),
+    ('F', 'F'),
+    ('M', 'M'),
+    ('R', 'R'),
+    ('T', 'T'),
+    ('V', 'V'),
+    ('Y', 'Y'),
+)
 
-    CHRGTYPE_CHOICES = (
-        ('A', 'A'),
-        ('C', 'C'),
-        ('F', 'F'),
-        ('M', 'M'),
-        ('R', 'R'),
-        ('T', 'T'),
-        ('V', 'V'),
-        ('Y', 'Y'),
-    )
+CHRGTYPE_VALUES = [v for v,c in CHRGTYPE_CHOICES]
 
-    CHRGTYPE_VALUES = [v for v,c in CHRGTYPE_CHOICES]
+CHRGTYPE2_CHOICES = (
+    ('2', '2'),
+    ('3', '3'),
+    ('Felony', 'Felony'),
+    ('Misdemeanor', 'Misdemeanor'),
+    ('R', 'R'),
+    ('Traffic', 'Traffic'),
+    ('V', 'V'),
+    ('Y', 'Y'),
+)
 
-    CHRGTYPE2_CHOICES = (
-        ('2', '2'),
-        ('3', '3'),
-        ('Felony', 'Felony'),
-        ('Misdemeanor', 'Misdemeanor'),
-        ('R', 'R'),
-        ('Traffic', 'Traffic'),
-        ('V', 'V'),
-        ('Y', 'Y'),
-    )
+CHRGCLASS_CHOICES = (
+    ('1', '1'),
+    ('2', '2'),
+    ('3', '3'),
+    ('4', '4'),
+    ('A', 'A'),
+    ('B', 'B'),
+    ('C', 'C'),
+    # 'D' is only seen in ammndchrgclass
+    ('D', 'D'),
+    # 'F' is only seen in ammndchrgclass
+    ('F', 'F'),
+    ('G', 'G'),
+    ('M', 'M'),
+    ('N', 'N'),
+    # 'O' is only seen in ammndchrgclass
+    ('O', 'O'),
+    ('P', 'P'),
+    ('T', 'T'),
+    ('U', 'U'),
+    ('X', 'X'),
+    ('Z', 'Z'),
+)
 
-    CHRGCLASS_CHOICES = (
-        ('1', '1'),
-        ('2', '2'),
-        ('3', '3'),
-        ('4', '4'),
-        ('A', 'A'),
-        ('B', 'B'),
-        ('C', 'C'),
-        # 'D' is only seen in ammndchrgclass
-        ('D', 'D'),
-        # 'F' is only seen in ammndchrgclass
-        ('F', 'F'),
-        ('G', 'G'),
-        ('M', 'M'),
-        ('N', 'N'),
-        # 'O' is only seen in ammndchrgclass
-        ('O', 'O'),
-        ('P', 'P'),
-        ('T', 'T'),
-        ('U', 'U'),
-        ('X', 'X'),
-        ('Z', 'Z'),
-    )
+CHRGCLASS_VALUES = [v for v,c in CHRGCLASS_CHOICES]
 
-    CHRGCLASS_VALUES = [v for v,c in CHRGCLASS_CHOICES]
 
-    raw_conviction = models.ForeignKey(RawConviction)
+class Disposition(models.Model):
+    """Disposition record with cleaned/transformed data"""
+    raw_disposition = models.ForeignKey(RawDisposition)
 
     # ID Fields 
-    case_number = models.CharField(max_length=MAX_LENGTH)
+    case_number = models.CharField(max_length=MAX_LENGTH, db_index=True)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
     ctlbkngno = models.CharField(max_length=MAX_LENGTH)
     fgrprntno = models.CharField(max_length=MAX_LENGTH)
     statepoliceid = models.CharField(max_length=MAX_LENGTH)
     fbiidno = models.CharField(max_length=MAX_LENGTH)
+    dob = models.DateField(null=True)
 
     st_address = models.CharField(max_length=MAX_LENGTH)
     city = models.CharField(max_length=MAX_LENGTH)
@@ -209,10 +394,9 @@ class Conviction(models.Model):
     zipcode = models.CharField(max_length=5)
     county = models.CharField(max_length=80, default="")
 
-    dob = models.DateField(null=True)
     arrest_date = models.DateField(null=True)
-    initial_date = models.DateField(null=True)
-    chrgdispdate = models.DateField(null=True)
+    initial_date = models.DateField(null=True, db_index=True)
+    chrgdispdate = models.DateField(null=True, db_index=True)
 
     sex = models.CharField(max_length=10, choices=SEX_CHOICES)
 
@@ -229,21 +413,37 @@ class Conviction(models.Model):
     ammndchrgdescr = models.CharField(max_length=50)
     ammndchrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES)
     ammndchrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES)
-    minsent = models.IntegerField(null=True)
-    maxsent = models.IntegerField(null=True)
+    minsent_years = models.IntegerField(null=True)
+    minsent_months = models.IntegerField(null=True)
+    minsent_days = models.IntegerField(null=True)
+    minsent_life = models.BooleanField(default=False)
+    minsent_death = models.BooleanField(default=False)
+    maxsent_years = models.IntegerField(null=True)
+    maxsent_months = models.IntegerField(null=True)
+    maxsent_days = models.IntegerField(null=True)
+    maxsent_life = models.BooleanField(default=False)
+    maxsent_death = models.BooleanField(default=False)
     amtoffine = models.IntegerField(null=True)
+
+    final_statute = models.CharField(max_length=50, default="",
+        help_text="Field to make querying easier.  Set to the value of "
+        "ammndchargstatute if present, otherwise set to the value of statute",
+        db_index=True)
+    iucr_code = models.CharField(max_length=4, default="", db_index=True)
+    iucr_category = models.CharField(max_length=50, default="", db_index=True)
     
     # Spatial fields
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
     community_area = models.ForeignKey('CommunityArea', null=True)
 
-    # Use a custom manager to add geocoding methods
-    objects = ConvictionManager()
+    conviction = models.ForeignKey('Conviction', null=True)
 
+    # Use a custom manager to add geocoding methods
+    objects = DispositionManager()
 
     def __init__(self, *args, **kwargs):
-        super(Conviction, self).__init__(*args, **kwargs)
+        super(Disposition, self).__init__(*args, **kwargs)
         if self.pk is None:
             # New model, populate it's fields by parsing the values from
             self.load_from_raw()
@@ -274,32 +474,66 @@ class Conviction(models.Model):
         return ",".join(bits)
 
     def load_from_raw(self):
-        """Load fields from related RawConviction model"""
-        for field_name in RawConviction._meta.get_all_field_names():
-            if field_name == "conviction":
+        """Load fields from related RawDisposition model"""
+        for field_name in RawDisposition._meta.get_all_field_names():
+            if field_name == "disposition":
                 # Skip reverse name on related field
                 continue
 
-            val = getattr(self.raw_conviction, field_name)
+            self.load_field_from_raw(field_name)
+
+        return self
+
+    def load_field_from_raw(self, field_name):
+        val = getattr(self.raw_disposition, field_name)
+        try:
+            loader = getattr(self, "_load_field_{}".format(field_name))
+            loader(val)
+        except AttributeError:
             try:
                 parser = getattr(self, "_parse_{}".format(field_name))
                 val = parser(val)
             except AttributeError:
                 pass
             except ValueError as e:
-                msg = ("Error when parsing '{}' from RawConviction with case "
+                msg = ("Error when parsing '{}' from RawDisposition with case "
                        "number '{}': {}")
-                msg = msg.format(field_name, self.raw_conviction.case_number, e)
+                msg = msg.format(field_name, self.raw_disposition.case_number, e)
                 logger.warning(msg)
                 if 'date' in field_name or field_name == 'dob':
                     val = None
 
             setattr(self, field_name, val) 
+        
+        return self
 
-        self.city, self.state = self._parse_city_state(self.raw_conviction.city_state)
+    def _load_field_city_state(self, val):
+        self.city, self.state = self._parse_city_state(val)
         if not self.state:
             self.state = self._detect_state(self.city)
 
+        return self
+
+    def _load_field_minsent(self, val):
+        self.minsent_years, self.minsent_months, self.minsent_days, self.minsent_life, self.minsent_death = self._parse_sentence(val)
+        return self
+
+    def _load_field_maxsent(self, val):
+        self.maxsent_years, self.maxsent_months, self.maxsent_days, self.maxsent_life, self.maxsent_death = self._parse_sentence(val)
+        return self
+
+    def _load_statute(self, val):
+        self.statute = val
+        if val:
+            self.iucr_code = get_iucr(val)
+            self.final_statute = val
+        return self
+
+    def _load_ammndchargstatute(self, val):
+        self.ammndchargstatute = val
+        if val:
+            self.iucr_code = get_iucr(val)
+            self.final_statute = val
         return self
 
     def boundarize(self):
@@ -310,6 +544,7 @@ class Conviction(models.Model):
             return self.community_area
         except CommunityArea.DoesNotExist:
             return False
+
        
     @classmethod
     def _parse_city_state(cls, city_state):
@@ -405,12 +640,18 @@ class Conviction(models.Model):
         return cls._parse_chrgclass(s)
 
     @classmethod
-    def _parse_minsent(cls, s):
-        return cls._parse_int(s)
+    def _parse_sentence(cls, s):
+        if s == "88888888":
+            return None, None, None, True, False
+        
+        if s == "99999999":
+            return None, None, None, False, True
 
-    @classmethod
-    def _parse_maxsent(cls, s):
-        return cls._parse_int(s)
+        val = s.zfill(8)
+        year = int(val[0:3])
+        mon = int(val[3:5])
+        day = int(val[5:8])
+        return year, mon, day, False, False
 
     @classmethod
     def _parse_amtoffine(cls, s):
@@ -422,6 +663,37 @@ class Conviction(models.Model):
             return None
 
         return int(s)
+
+
+class Conviction(models.Model):
+    case_number = models.CharField(max_length=MAX_LENGTH, db_index=True)
+
+    ctlbkngno = models.CharField(max_length=MAX_LENGTH)
+    fgrprntno = models.CharField(max_length=MAX_LENGTH)
+    statepoliceid = models.CharField(max_length=MAX_LENGTH)
+    fbiidno = models.CharField(max_length=MAX_LENGTH)
+    dob = models.DateField(null=True)
+
+    st_address = models.CharField(max_length=MAX_LENGTH)
+    city = models.CharField(max_length=MAX_LENGTH)
+    state = models.CharField(max_length=2)
+    zipcode = models.CharField(max_length=5)
+    county = models.CharField(max_length=80, default="")
+
+    sex = models.CharField(max_length=10, choices=SEX_CHOICES, db_index=True)
+
+    chrgdispdate = models.DateField(null=True)
+    final_statute = models.CharField(max_length=50, default="",
+        help_text="Field to make querying easier.  Set to the value of "
+        "ammndchargstatute if present, otherwise set to the value of statute",
+        db_index=True)
+    iucr_code = models.CharField(max_length=4, default="", db_index=True)
+    iucr_category = models.CharField(max_length=50, default="", db_index=True)
+
+    community_area = models.ForeignKey('CommunityArea', null=True)
+
+    def __str__(self):
+        return "{} {} {}".format(self.case_number, self.chrgdispdate, self.final_statute)
 
 
 class Municipality(geo_models.Model):

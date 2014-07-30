@@ -33,24 +33,24 @@ Then run::
 
     ./manage.py load_spatial_data Municipality data/Municipality/Municipality.shp
 
-Load raw convictions data
+Load raw dispositions data
 -------------------------
 
 ::
 
-    ./manage.py load_convictions_csv data/Criminal_Convictions_ALLCOOK_05-09.csv
+    ./manage.py load_dispositions_csv data/Criminal_Convictions_ALLCOOK_05-09.csv
 
 
-Populate clean conviction records
+Populate clean disposition records
 ---------------------------------
 
 ::
 
-    ./manage.py create_convictions
+    ./manage.py create_dispositions
 
-Geocode conviction records
+Geocode disposition records
 --------------------------
 
 ::
 
-    ./manage.py geocode_convictions
+    ./manage.py geocode_dispositions

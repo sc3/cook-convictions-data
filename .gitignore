@@ -1,6 +1,8 @@
 *.pyc
 *.swp
+*.log
 __pycache__
+.ipynb_checkpoints
 data
 convictions/settings/dev.py
 convictions.sqlite3
