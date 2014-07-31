@@ -14,7 +14,8 @@ from django.core.paginator import Paginator
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.statute import get_iucr
-from convictions_data.signals import pre_geocode_page, post_geocode_page
+from convictions_data.signals import (pre_geocode_page, post_geocode_page,
+    post_load_spatial_data)
 
 logger = logging.getLogger(__name__)
 
@@ -763,3 +764,52 @@ class CommunityArea(geo_models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CensusTractManager(geo_models.GeoManager):
+    def set_community_area_relations(self):
+        for tract in self.get_query_set().all():
+            ca = CommunityArea.objects.get(number=tract.community_area_number)
+            # BOOKMARK
+            tract.community_area = ca
+            tract.save()
+
+
+class CensusTract(geo_models.Model):
+    """
+    Census Tract
+
+    Wraps
+    https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik 
+    """
+    statefp10 = geo_models.CharField(max_length=2)
+    countyfp10 = geo_models.CharField(max_length=3)
+    tractce10 = geo_models.CharField(max_length=6)
+    geoid10 = geo_models.CharField(max_length=11, db_index=True)
+    name = geo_models.CharField(max_length=7, db_index=True)
+    community_area_number = geo_models.IntegerField()
+    notes = geo_models.CharField(max_length=80)
+
+    boundary = geo_models.MultiPolygonField()
+
+    community_area = geo_models.ForeignKey(CommunityArea, null=True)
+
+    objects = CensusTractManager()
+
+    FIELD_MAPPING = {
+        'statefp10': 'STATEFP10',
+        'countyfp10': 'COUNTYFP10',
+        'tractce10': 'TRACTCE10',
+        'geoid10': 'GEOID10',
+        'name': 'NAME10',
+        'community_area_number': 'COMMAREA_N',
+        'notes': 'NOTES',
+        'boundary': 'MULTIPOLYGON',
+    }
+
+
+def handle_post_load_spatial_data(sender, **kwargs):
+    if kwargs['model'] == CensusTract:
+        CensusTract.objects.set_community_area_relations()
+
+post_load_spatial_data.connect(handle_post_load_spatial_data)
