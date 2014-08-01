@@ -61,6 +61,15 @@ Geocode disposition records
 
     ./manage.py geocode_dispositions
 
+Load census data
+----------------
+
+::
+
+    ./manage.py load_aff_data data/ACS_10_5YR_B01003_with_ann-totpop.csv total_population GEO.id2 HD01_VD01 HD02_VD01 
+
+    ./manage.py load_aff_data data/ACS_10_5YR_B19301_with_ann-per_capita_income.csv per_capita_income GEO.id2 HD01_VD01 HD02_VD01
+
 
 Other datasets
 ==============

@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import math
 import re
 
 import geopy.geocoders
@@ -737,8 +738,27 @@ class Municipality(geo_models.Model):
     def __str__(self):
         return self.name
 
+class CensusFieldsMixin(geo_models.Model):
+    # Census fields
+    total_population = geo_models.IntegerField(null=True)
+    total_population_moe = geo_models.IntegerField(null=True)
+    per_capita_income = geo_models.IntegerField(null=True,
+        help_text=("PER CAPITA INCOME IN THE PAST 12 MONTHS (IN 2010 "
+            "INFLATION-ADJUSTED DOLLARS)"))
+    per_capita_income_moe = geo_models.IntegerField(null=True)
 
-class CommunityArea(geo_models.Model):
+    class Meta:
+        abstract = True
+
+
+class CommunityAreaManager(geo_models.GeoManager):
+    def aggregate_census_fields(self):
+        for ca in self.get_query_set():
+            ca.aggregate_census_fields()
+            ca.save()
+
+
+class CommunityArea(CensusFieldsMixin, geo_models.Model):
     """
     Chicago Community Area
 
@@ -752,7 +772,7 @@ class CommunityArea(geo_models.Model):
 
     boundary = geo_models.MultiPolygonField()
 
-    objects = geo_models.GeoManager()
+    objects = CommunityAreaManager() 
 
     FIELD_MAPPING = {
         'number': 'AREA_NUMBE',
@@ -765,6 +785,28 @@ class CommunityArea(geo_models.Model):
     def __str__(self):
         return self.name
 
+    def aggregate_census_fields(self):
+        fields = ('total_population', 'per_capita_income')
+        for field in fields:
+            self.aggregate_census_field(field)
+
+    def aggregate_census_field(self, field):
+        moe_field = field + "_moe"
+        aggregate = 0
+        aggregate_moe = 0
+        for tract in self.censustract_set.all():
+            val = getattr(tract, field)
+            if val is not None:
+                aggregate += val
+
+                moe = getattr(tract, moe_field)
+                aggregate_moe += moe**2
+
+        aggregate_moe = math.sqrt(aggregate_moe) 
+        setattr(self, field, aggregate)
+        setattr(self, moe_field, aggregate_moe)
+        return aggregate, aggregate_moe
+
 
 class CensusTractManager(geo_models.GeoManager):
     def set_community_area_relations(self):
@@ -775,7 +817,7 @@ class CensusTractManager(geo_models.GeoManager):
             tract.save()
 
 
-class CensusTract(geo_models.Model):
+class CensusTract(CensusFieldsMixin, geo_models.Model):
     """
     Census Tract
 
@@ -790,6 +832,7 @@ class CensusTract(geo_models.Model):
     community_area_number = geo_models.IntegerField()
     notes = geo_models.CharField(max_length=80)
 
+    # Spatial fields
     boundary = geo_models.MultiPolygonField()
 
     community_area = geo_models.ForeignKey(CommunityArea, null=True)
@@ -806,6 +849,9 @@ class CensusTract(geo_models.Model):
         'notes': 'NOTES',
         'boundary': 'MULTIPOLYGON',
     }
+
+    def __str__(self):
+        return self.geoid10
 
 
 def handle_post_load_spatial_data(sender, **kwargs):
