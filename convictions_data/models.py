@@ -9,8 +9,12 @@ from django.db import models
 from django.db.models import Q, Min
 from django.contrib.gis.db import models as geo_models
 from django.conf import settings
+from django.contrib.gis.db.models.query import GeoQuerySet
 from django.contrib.gis.geos import Point
 from django.core.paginator import Paginator
+
+from djgeojson.serializers import Serializer as GeoJSONSerializer
+
 
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
@@ -750,12 +754,111 @@ class CensusFieldsMixin(geo_models.Model):
     class Meta:
         abstract = True
 
+class CommunityAreaQuerySet(GeoQuerySet):
+    GEOJSON_FIELDS = [
+        'number',
+        'name',
+        'total_population',
+        'num_convictions',
+        'convictions_per_capita',
+        'num_homicides',
+        'boundary',
+    ]
+    """
+    Fields included in GeoJSON export
+    """
+
+    def with_conviction_annotations(self):
+        """
+        Annotate the QuerySet with counts based on related convictions stats
+
+        Returns:
+            A QuerySet with the following annotated fields added to the models:
+
+            * num_convictions: Total number of convictions in the geography.
+            * convictions_per_capita: Population-adjusted count of all
+               convictions.
+
+
+        """
+        this_table = self.model._meta.db_table
+        conviction_table = Conviction._meta.db_table
+        annotated_qs = self
+        # Use the ``extra()`` QuerySet method to annotate this QuerySet
+        # with aggregates based on a filtered, joined table.
+        # This method was suggested by
+        # http://timmyomahony.com/blog/filtering-annotations-django/
+
+        # First, define some SQL strings to make this stuff a little easier
+        # to read.
+        matches_this_id_where_sql = ('{conviction_table}.community_area_id = '
+            '{this_table}.id').format(conviction_table=conviction_table, this_table=this_table)
+
+        # It seems like we could just do the following query with the Count()
+        # aggregator, but the ORM adds the extra value from the select in the
+        # GROUP BY clause which breaks all kinds of stuff.
+        #
+        # I think this is reflected as
+        # https://code.djangoproject.com/ticket/11916
+        num_convictions_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+        ).format(conviction_table=conviction_table, this_table=this_table,
+            matches_this_id=matches_this_id_where_sql)
+        convictions_per_capita_sql = ('SELECT CAST(COUNT("{conviction_table}"."id") AS FLOAT) / '
+            '"{this_table}"."total_population" '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+        ).format(conviction_table=conviction_table, this_table=this_table,
+            matches_this_id=matches_this_id_where_sql)
+        num_homicides_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_category = "Homicide"'
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql)
+
+        annotated_qs = annotated_qs.extra(select={
+            'num_convictions': num_convictions_sql,
+            'convictions_per_capita': convictions_per_capita_sql,
+            'num_homicides': num_homicides_sql,
+        })
+
+        return annotated_qs 
+
+    def geojson(self, simplify=0.0):
+        """
+        Serialize models in this QuerySet as a GeoJSON FeatureCollection.
+
+        Args:
+            simplify (float): Tolerance value to use when simplifying the
+                geometry fields of the models. Default is 0.  
+
+        Returns:
+            GeoJSON string representing a FeatureCollection containing each
+            model as a feature.
+
+        """
+        # Use a ValuesQuerySet so pk, model name and other cruft aren't
+        # included in the serialized output.
+        vqs = self.with_conviction_annotations().values(*self.GEOJSON_FIELDS)
+
+        return GeoJSONSerializer().serialize(vqs,
+            simplify=simplify,
+            geometry_field='boundary')
+
 
 class CommunityAreaManager(geo_models.GeoManager):
+    def get_queryset(self):
+        return CommunityAreaQuerySet(self.model, using=self._db)
+
     def aggregate_census_fields(self):
         for ca in self.get_query_set():
             ca.aggregate_census_fields()
             ca.save()
+
+    def geojson(self, simplify=0.0):
+        return self.get_queryset().geojson(simplify=simplify)
 
 
 class CommunityArea(CensusFieldsMixin, geo_models.Model):
@@ -812,7 +915,6 @@ class CensusTractManager(geo_models.GeoManager):
     def set_community_area_relations(self):
         for tract in self.get_query_set().all():
             ca = CommunityArea.objects.get(number=tract.community_area_number)
-            # BOOKMARK
             tract.community_area = ca
             tract.save()
 
