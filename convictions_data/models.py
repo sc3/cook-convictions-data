@@ -148,6 +148,9 @@ class DispositionQuerySet(models.query.QuerySet):
         'fbiidno',
         'fgrprntno',
         'final_statute',
+        'final_chrgdesc',
+        'final_chrgtype',
+        'final_chrgclass',
         'id',
         'iucr_category',
         'iucr_code',
@@ -435,6 +438,11 @@ class Disposition(models.Model):
         help_text="Field to make querying easier.  Set to the value of "
         "ammndchargstatute if present, otherwise set to the value of statute",
         db_index=True)
+    final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
+    final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
+        default="", db_index=True)
+    final_chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES,
+        default="", db_index=True)
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
     
@@ -528,18 +536,55 @@ class Disposition(models.Model):
         self.maxsent_years, self.maxsent_months, self.maxsent_days, self.maxsent_life, self.maxsent_death = self._parse_sentence(val)
         return self
 
-    def _load_statute(self, val):
+    def _load_field_statute(self, val):
         self.statute = val
         if val:
             self.iucr_code = get_iucr(val)
             self.final_statute = val
         return self
 
-    def _load_ammndchargstatute(self, val):
+
+    def _load_field_chrgdesc(self, val):
+        self.chrgdesc = val
+        if val:
+            self.final_chrgdesc = val
+        return self
+
+    def _load_field_chrgtype(self, val):
+        self.chrgtype = val
+        if val:
+            self.final_chrgtype = val
+        return self
+
+    def _load_field_chrgclass(self, val):
+        self.chrgclass = val
+        if val:
+            self.final_chrgclass = val
+        return self
+
+    def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
         if val:
             self.iucr_code = get_iucr(val)
             self.final_statute = val
+        return self
+
+    def _load_field_ammndchrgdescr(self, val):
+        self.ammndchrgdescr = val
+        if val:
+            self.final_chrgdesc = val
+        return self
+
+    def _load_field_ammndchrgtype(self, val):
+        self.ammndchrgtype = val
+        if val:
+            self.final_chrgtype = val
+        return self
+
+    def _load_field_ammndchrgclass(self, val):
+        self.ammndchrgclass = val
+        if val:
+            self.final_chrgclass = val
         return self
 
     def boundarize(self):
@@ -693,6 +738,11 @@ class Conviction(models.Model):
         help_text="Field to make querying easier.  Set to the value of "
         "ammndchargstatute if present, otherwise set to the value of statute",
         db_index=True)
+    final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
+    final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
+        default="", db_index=True)
+    final_chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES,
+        default="", db_index=True)
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
 
