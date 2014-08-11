@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import math
 import re
 
 import geopy.geocoders
@@ -8,13 +9,18 @@ from django.db import models
 from django.db.models import Q, Min
 from django.contrib.gis.db import models as geo_models
 from django.conf import settings
+from django.contrib.gis.db.models.query import GeoQuerySet
 from django.contrib.gis.geos import Point
 from django.core.paginator import Paginator
+
+from djgeojson.serializers import Serializer as GeoJSONSerializer
+
 
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.statute import get_iucr
-from convictions_data.signals import pre_geocode_page, post_geocode_page
+from convictions_data.signals import (pre_geocode_page, post_geocode_page,
+    post_load_spatial_data)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +148,9 @@ class DispositionQuerySet(models.query.QuerySet):
         'fbiidno',
         'fgrprntno',
         'final_statute',
+        'final_chrgdesc',
+        'final_chrgtype',
+        'final_chrgclass',
         'id',
         'iucr_category',
         'iucr_code',
@@ -429,6 +438,11 @@ class Disposition(models.Model):
         help_text="Field to make querying easier.  Set to the value of "
         "ammndchargstatute if present, otherwise set to the value of statute",
         db_index=True)
+    final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
+    final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
+        default="", db_index=True)
+    final_chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES,
+        default="", db_index=True)
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
     
@@ -522,18 +536,55 @@ class Disposition(models.Model):
         self.maxsent_years, self.maxsent_months, self.maxsent_days, self.maxsent_life, self.maxsent_death = self._parse_sentence(val)
         return self
 
-    def _load_statute(self, val):
+    def _load_field_statute(self, val):
         self.statute = val
         if val:
             self.iucr_code = get_iucr(val)
             self.final_statute = val
         return self
 
-    def _load_ammndchargstatute(self, val):
+
+    def _load_field_chrgdesc(self, val):
+        self.chrgdesc = val
+        if val:
+            self.final_chrgdesc = val
+        return self
+
+    def _load_field_chrgtype(self, val):
+        self.chrgtype = val
+        if val:
+            self.final_chrgtype = val
+        return self
+
+    def _load_field_chrgclass(self, val):
+        self.chrgclass = val
+        if val:
+            self.final_chrgclass = val
+        return self
+
+    def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
         if val:
             self.iucr_code = get_iucr(val)
             self.final_statute = val
+        return self
+
+    def _load_field_ammndchrgdescr(self, val):
+        self.ammndchrgdescr = val
+        if val:
+            self.final_chrgdesc = val
+        return self
+
+    def _load_field_ammndchrgtype(self, val):
+        self.ammndchrgtype = val
+        if val:
+            self.final_chrgtype = val
+        return self
+
+    def _load_field_ammndchrgclass(self, val):
+        self.ammndchrgclass = val
+        if val:
+            self.final_chrgclass = val
         return self
 
     def boundarize(self):
@@ -687,6 +738,11 @@ class Conviction(models.Model):
         help_text="Field to make querying easier.  Set to the value of "
         "ammndchargstatute if present, otherwise set to the value of statute",
         db_index=True)
+    final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
+    final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
+        default="", db_index=True)
+    final_chrgclass = models.CharField(max_length=1, choices=CHRGCLASS_CHOICES,
+        default="", db_index=True)
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
 
@@ -736,8 +792,126 @@ class Municipality(geo_models.Model):
     def __str__(self):
         return self.name
 
+class CensusFieldsMixin(geo_models.Model):
+    # Census fields
+    total_population = geo_models.IntegerField(null=True)
+    total_population_moe = geo_models.IntegerField(null=True)
+    per_capita_income = geo_models.IntegerField(null=True,
+        help_text=("PER CAPITA INCOME IN THE PAST 12 MONTHS (IN 2010 "
+            "INFLATION-ADJUSTED DOLLARS)"))
+    per_capita_income_moe = geo_models.IntegerField(null=True)
 
-class CommunityArea(geo_models.Model):
+    class Meta:
+        abstract = True
+
+class CommunityAreaQuerySet(GeoQuerySet):
+    GEOJSON_FIELDS = [
+        'number',
+        'name',
+        'total_population',
+        'num_convictions',
+        'convictions_per_capita',
+        'num_homicides',
+        'boundary',
+    ]
+    """
+    Fields included in GeoJSON export
+    """
+
+    def with_conviction_annotations(self):
+        """
+        Annotate the QuerySet with counts based on related convictions stats
+
+        Returns:
+            A QuerySet with the following annotated fields added to the models:
+
+            * num_convictions: Total number of convictions in the geography.
+            * convictions_per_capita: Population-adjusted count of all
+               convictions.
+
+
+        """
+        this_table = self.model._meta.db_table
+        conviction_table = Conviction._meta.db_table
+        annotated_qs = self
+        # Use the ``extra()`` QuerySet method to annotate this QuerySet
+        # with aggregates based on a filtered, joined table.
+        # This method was suggested by
+        # http://timmyomahony.com/blog/filtering-annotations-django/
+
+        # First, define some SQL strings to make this stuff a little easier
+        # to read.
+        matches_this_id_where_sql = ('{conviction_table}.community_area_id = '
+            '{this_table}.id').format(conviction_table=conviction_table, this_table=this_table)
+
+        # It seems like we could just do the following query with the Count()
+        # aggregator, but the ORM adds the extra value from the select in the
+        # GROUP BY clause which breaks all kinds of stuff.
+        #
+        # I think this is reflected as
+        # https://code.djangoproject.com/ticket/11916
+        num_convictions_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+        ).format(conviction_table=conviction_table, this_table=this_table,
+            matches_this_id=matches_this_id_where_sql)
+        convictions_per_capita_sql = ('SELECT CAST(COUNT("{conviction_table}"."id") AS FLOAT) / '
+            '"{this_table}"."total_population" '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+        ).format(conviction_table=conviction_table, this_table=this_table,
+            matches_this_id=matches_this_id_where_sql)
+        num_homicides_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_category = "Homicide"'
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql)
+
+        annotated_qs = annotated_qs.extra(select={
+            'num_convictions': num_convictions_sql,
+            'convictions_per_capita': convictions_per_capita_sql,
+            'num_homicides': num_homicides_sql,
+        })
+
+        return annotated_qs 
+
+    def geojson(self, simplify=0.0):
+        """
+        Serialize models in this QuerySet as a GeoJSON FeatureCollection.
+
+        Args:
+            simplify (float): Tolerance value to use when simplifying the
+                geometry fields of the models. Default is 0.  
+
+        Returns:
+            GeoJSON string representing a FeatureCollection containing each
+            model as a feature.
+
+        """
+        # Use a ValuesQuerySet so pk, model name and other cruft aren't
+        # included in the serialized output.
+        vqs = self.with_conviction_annotations().values(*self.GEOJSON_FIELDS)
+
+        return GeoJSONSerializer().serialize(vqs,
+            simplify=simplify,
+            geometry_field='boundary')
+
+
+class CommunityAreaManager(geo_models.GeoManager):
+    def get_queryset(self):
+        return CommunityAreaQuerySet(self.model, using=self._db)
+
+    def aggregate_census_fields(self):
+        for ca in self.get_query_set():
+            ca.aggregate_census_fields()
+            ca.save()
+
+    def geojson(self, simplify=0.0):
+        return self.get_queryset().geojson(simplify=simplify)
+
+
+class CommunityArea(CensusFieldsMixin, geo_models.Model):
     """
     Chicago Community Area
 
@@ -751,7 +925,7 @@ class CommunityArea(geo_models.Model):
 
     boundary = geo_models.MultiPolygonField()
 
-    objects = geo_models.GeoManager()
+    objects = CommunityAreaManager() 
 
     FIELD_MAPPING = {
         'number': 'AREA_NUMBE',
@@ -763,3 +937,77 @@ class CommunityArea(geo_models.Model):
 
     def __str__(self):
         return self.name
+
+    def aggregate_census_fields(self):
+        fields = ('total_population', 'per_capita_income')
+        for field in fields:
+            self.aggregate_census_field(field)
+
+    def aggregate_census_field(self, field):
+        moe_field = field + "_moe"
+        aggregate = 0
+        aggregate_moe = 0
+        for tract in self.censustract_set.all():
+            val = getattr(tract, field)
+            if val is not None:
+                aggregate += val
+
+                moe = getattr(tract, moe_field)
+                aggregate_moe += moe**2
+
+        aggregate_moe = math.sqrt(aggregate_moe) 
+        setattr(self, field, aggregate)
+        setattr(self, moe_field, aggregate_moe)
+        return aggregate, aggregate_moe
+
+
+class CensusTractManager(geo_models.GeoManager):
+    def set_community_area_relations(self):
+        for tract in self.get_query_set().all():
+            ca = CommunityArea.objects.get(number=tract.community_area_number)
+            tract.community_area = ca
+            tract.save()
+
+
+class CensusTract(CensusFieldsMixin, geo_models.Model):
+    """
+    Census Tract
+
+    Wraps
+    https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik 
+    """
+    statefp10 = geo_models.CharField(max_length=2)
+    countyfp10 = geo_models.CharField(max_length=3)
+    tractce10 = geo_models.CharField(max_length=6)
+    geoid10 = geo_models.CharField(max_length=11, db_index=True)
+    name = geo_models.CharField(max_length=7, db_index=True)
+    community_area_number = geo_models.IntegerField()
+    notes = geo_models.CharField(max_length=80)
+
+    # Spatial fields
+    boundary = geo_models.MultiPolygonField()
+
+    community_area = geo_models.ForeignKey(CommunityArea, null=True)
+
+    objects = CensusTractManager()
+
+    FIELD_MAPPING = {
+        'statefp10': 'STATEFP10',
+        'countyfp10': 'COUNTYFP10',
+        'tractce10': 'TRACTCE10',
+        'geoid10': 'GEOID10',
+        'name': 'NAME10',
+        'community_area_number': 'COMMAREA_N',
+        'notes': 'NOTES',
+        'boundary': 'MULTIPOLYGON',
+    }
+
+    def __str__(self):
+        return self.geoid10
+
+
+def handle_post_load_spatial_data(sender, **kwargs):
+    if kwargs['model'] == CensusTract:
+        CensusTract.objects.set_community_area_relations()
+
+post_load_spatial_data.connect(handle_post_load_spatial_data)

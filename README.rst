@@ -33,6 +33,12 @@ Then run::
 
     ./manage.py load_spatial_data Municipality data/Municipality/Municipality.shp
 
+Download and unpack the Shapefile version of the Census Tract data.
+
+Then run::
+
+    ./manage.py load_spatial_data CensusTract data/CensusTracts2010/CensusTractsTIGER2010.shp
+
 Load raw dispositions data
 -------------------------
 
@@ -54,3 +60,20 @@ Geocode disposition records
 ::
 
     ./manage.py geocode_dispositions
+
+Load census data
+----------------
+
+::
+
+    ./manage.py load_aff_data data/ACS_10_5YR_B01003_with_ann-totpop.csv total_population GEO.id2 HD01_VD01 HD02_VD01 
+
+    ./manage.py load_aff_data data/ACS_10_5YR_B19301_with_ann-per_capita_income.csv per_capita_income GEO.id2 HD01_VD01 HD02_VD01
+
+
+Other datasets
+==============
+
+* `Boundaries - Community Areas (current) <https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6>`_ 
+* `Cook County Municipalities <https://datacatalog.cookcountyil.gov/GIS-Maps/ccgisdata-Municipality/ta8t-zebk>`_
+* `Boundaries - Census Tracts - 2010 <https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik>`_
