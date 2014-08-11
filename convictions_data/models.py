@@ -538,9 +538,17 @@ class Disposition(models.Model):
 
     def _load_field_statute(self, val):
         self.statute = val
+
         if val:
-            self.iucr_code = get_iucr(val)
             self.final_statute = val
+
+            offenses = get_iucr(val)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+                       
         return self
 
 
@@ -564,9 +572,17 @@ class Disposition(models.Model):
 
     def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
+
         if val:
-            self.iucr_code = get_iucr(val)
             self.final_statute = val
+
+            offenses = get_iucr(val)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+
         return self
 
     def _load_field_ammndchrgdescr(self, val):
