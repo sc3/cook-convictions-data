@@ -323,24 +323,24 @@ class ConvictionQuerySet(QuerySet):
 
     # Q objects that will be used in the call to filter()
 
-    homicide_iucr_query = Q(iucr__in=homicide_iucr_codes)
-    homicide_nonindex_iucr_query = Q(iucr__in=homicide_nonindex_iucr_codes)
-    sexual_assault_iucr_query = Q(iucr__in=sexual_assault_iucr_codes)
-    robbery_iucr_query = Q(iucr__in=robbery_iucr_codes)
-    agg_assault_iucr_query = Q(iucr__in=agg_assault_iucr_codes)
-    agg_assault_nonindex_iucr_query = Q(iucr_in=agg_assault_iucr_codes)
-    non_agg_assault_iucr_query = Q(iucr__in=non_agg_assault_iucr_codes) 
-    agg_battery_iucr_query = Q(iucr__in=agg_battery_iucr_codes)
-    agg_battery_nonindex_iucr_query = Q(iucr__in=agg_battery_nonindex_iucr_codes)
-    burglary_iucr_query = Q(iucr__in=burglary_iucr_codes)
-    theft_iucr_query = Q(iucr__in=theft_iucr_codes)
-    motor_vehicle_theft_iucr_query = Q(ucr__in=motor_vehicle_theft_iucr_codes)
-    arson_iucr_query = Q(iucr__in=arson_iucr_codes)
-    arson_nonindex_iucr_query = Q(iucr__in=arson_nonindex_iucr_codes)
-    domestic_violence_iucr_query = Q(iucr__in=domestic_violence_iucr_codes)
-    stalking_iucr_query = Q(iucr__in=stalking_iucr_codes)
-    violating_order_protection_iucr_query = Q(iucr__in=violating_order_protection_iucr_codes)
-    drug_icur_query = Q(icur__in=drug_iucr_codes)
+    homicide_iucr_query = Q(iucr_code__in=homicide_iucr_codes)
+    homicide_nonindex_iucr_query = Q(iucr_code__in=homicide_nonindex_iucr_codes)
+    sexual_assault_iucr_query = Q(iucr_code__in=sexual_assault_iucr_codes)
+    robbery_iucr_query = Q(iucr_code__in=robbery_iucr_codes)
+    agg_assault_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
+    agg_assault_nonindex_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
+    non_agg_assault_iucr_query = Q(iucr_code__in=non_agg_assault_iucr_codes) 
+    agg_battery_iucr_query = Q(iucr_code__in=agg_battery_iucr_codes)
+    agg_battery_nonindex_iucr_query = Q(iucr_code__in=agg_battery_nonindex_iucr_codes)
+    burglary_iucr_query = Q(iucr_code__in=burglary_iucr_codes)
+    theft_iucr_query = Q(iucr_code__in=theft_iucr_codes)
+    motor_vehicle_theft_iucr_query = Q(iucr_code__in=motor_vehicle_theft_iucr_codes)
+    arson_iucr_query = Q(iucr_code__in=arson_iucr_codes)
+    arson_nonindex_iucr_query = Q(iucr_code__in=arson_nonindex_iucr_codes)
+    domestic_violence_iucr_query = Q(iucr_code__in=domestic_violence_iucr_codes)
+    stalking_iucr_query = Q(iucr_code__in=stalking_iucr_codes)
+    violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
+    drug_icur_query = Q(iucr_code__in=drug_iucr_codes)
     
     # TODO: Add queries based on charge description as workaround or supplement
     # to statutes that couldn't be coded to IUCR codes
@@ -358,12 +358,12 @@ class ConvictionQuerySet(QuerySet):
 
         """
         qs = self.filter(self.homicide_iucr_query | self.sexual_assault_iucr_query |
-            self.robbery_iucr_query | self.agg_battery_query |
-            self.agg_assault_query)
+            self.robbery_iucr_query | self.agg_battery_iucr_query |
+            self.agg_assault_iucr_query)
         # Exclude non-index crimes
         qs = qs.exclude(self.homicide_nonindex_iucr_query |
             self.agg_assault_nonindex_iucr_query |
-            self.agg_battery_nonindex_iucr_codes)
+            self.agg_battery_nonindex_iucr_query)
         return qs
 
     def property_index_crimes(self):
