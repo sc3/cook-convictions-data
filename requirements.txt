@@ -3,3 +3,4 @@ us>=0.6
 geopy>=0.99
 South>=0.8,<1.0
 django-geojson==2.6.0
+django-model-utils==2.2
