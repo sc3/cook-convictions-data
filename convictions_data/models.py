@@ -183,9 +183,11 @@ class Disposition(models.Model):
     # Spatial fields
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
-    community_area = models.ForeignKey('CommunityArea', null=True)
+    community_area = models.ForeignKey('CommunityArea', null=True,
+        on_delete=models.SET_NULL)
 
-    conviction = models.ForeignKey('Conviction', null=True)
+    conviction = models.ForeignKey('Conviction', null=True,
+        on_delete=models.SET_NULL)
 
     # Use a custom manager to add geocoding methods
     objects = DispositionManager()
@@ -514,7 +516,8 @@ class Conviction(models.Model):
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
 
-    community_area = models.ForeignKey('CommunityArea', null=True)
+    community_area = models.ForeignKey('CommunityArea', null=True,
+        on_delete=models.SET_NULL)
 
     objects = PassThroughManager.for_queryset_class(ConvictionQuerySet)()
 
@@ -647,7 +650,8 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
     # Spatial fields
     boundary = geo_models.MultiPolygonField()
 
-    community_area = geo_models.ForeignKey(CommunityArea, null=True)
+    community_area = geo_models.ForeignKey(CommunityArea, null=True,
+        on_delete=models.SET_NULL)
 
     objects = CensusTractManager()
 
