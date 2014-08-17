@@ -2,5 +2,4 @@ Django>=1.6.5
 us>=0.6
 geopy>=0.99
 South>=0.8,<1.0
-git+https://github.com/sc3/python-ilcs.git@master
-git+https://github.com/sc3/python-iucr.git@master
+django-geojson==2.6.0
