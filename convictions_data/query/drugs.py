@@ -121,7 +121,12 @@ mfg_del_sched_1_2_50_200_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(1
 # Manufacture or delivery of a conterfeit substance
 # Class 1 Felony
 # ILCS 720-570/402(a)
-mfg_del_cntft_sub_query = Q(final_statute__iregex=r'(56.5|38-8-4)[-\(]1403[-A3]+\){0,1}')
+mfg_del_cntft_sub_query = Q(final_statute__iregex=r'56.5[-\(]1403[-A3]+\){0,1}')
+
+# Attempted manufacture or delivery of a conterfiet substance
+# Class 1 Felony, downgraded to Class 2
+# ILCS 720-5/8-4 + ILCS 720-570/402(a)
+mfg_del_att_cntft_sub_query = Q(final_statute__iregex=r'38-8-4[-\(]1403\s{0,1}[-A3]+\){0,1}')
         
 # Class X Felony
 # From http://www.criminallawyerillinois.com/2010/02/22/what-is-a-class-x-felony-in-illinois/: 
@@ -183,7 +188,7 @@ mfg_del_amph_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(6\)')
 
 # Class X Felony, >=15g, < 100g or >= 15, < 200 objects Ecstasy
 # ILCS 720-570/401(a)(7.5)(A)
-mfg_del_ecstasy_15_100_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}a\){0,1}\(7\.5\)\({0,1}a\){0,1}]')
+mfg_del_ecstasy_15_100_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}a\){0,1}\(7\.5\)\({0,1}a\){0,1}')
 
 # Class X Felony, >= 100, < 400g or >= 200, < 600 objects Ecstasy
 # ILCS 720-570/401(a)(7.5)(B)
@@ -211,12 +216,38 @@ mfg_del_pcp_gt_30g_query = (Q(final_statute__iregex=r'720-570/401\(a\)\(10\)') |
 # ILCS 720-570/401(a)(11)
 mfg_del_sched_1_2_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(11\)')
 
+# Manufacture or delivery, Class 2 Felony, other amount
+# ILCS 720-570/401(d)
+# Use exact values here so we don't accidentally capture the attempted or
+# conspiracy charges (see below)
+mfg_del_class_2_other_amt_query = Q(final_statute__in=('720-570/401(D)',
+    '720-570/401(D)(I)'))
+
 # Attempted Class 2 Felony
 # Since these are attempted, they get downgraded to a Class 3 Felony
 # ILCS 720-5/8-4 + ILCS 720-570/401(d)
-mfg_del_att_class_2_query = (Q(final_statute__iregex=r'720[\s-](5/8-4 ){0,1}\({0,1}570/401\({0,1}\s{0,1}d\){0,1}\){0,1}') |
-    Q(final_statute__in=("720-5/(8-4)401(D)", "720-570(8-4)/401(D)(I)",
-                         "720-5/8-4(720-5/401(D)/407(B)(2))")))
+# The statute fields for these are all over the place, making for a nasty
+# regex.  Just list them.
+mfg_del_att_class_2_query = Q(final_statute__in=(
+    '720-5/8-4(720-5/401(D)/407(B)(2))',
+    '720 5/8-4 570/401D',
+    '720 5/8-4 (570/401 D)',
+    '720-5/8-4 (570/401 D)',
+    '720-5/8-4(720-570/401(D)(1)',
+    '720-570(8-4)/401(D)(I))',
+    '720-570(8-4)/401(D)(I)',
+    '720-5/8-4(720-5/401(D)/407(B)(2)',
+    '720-5/(8-4)401(D)',
+    '720-570/401(D)(720-5/8-4))',
+    '720-570/401(D)(720-5/8-4)',
+))
+
+# Conspiracy to manufacture and deliver
+# ILCS 720-5/8-2 + some other charge
+# Conspiracy charges get bumped down to the next lowest class of felony.
+# So, for the Class 2 felony drug conviction (720-570/401(d)), the corresponding
+# conspiracy charge would be a Class 3 Felony
+mfg_del_conspiracy_class_2_query = Q(final_statute='720-5\8-2(570\\401D)')
 
 # Commiting one of the other 720-570/401 crimes near a school, park or
 # public housing
@@ -226,16 +257,14 @@ mfg_del_near_sch_pk_pub_hs_query = Q(final_statute__iregex=r'720-570/407\(b\)')
 # someone < 18
 mfg_del_involving_minor_query = Q(final_statute__in=("720-570/407(a)", "720-570/407.1"))
 
-# Class 3 Felony
-
-# Conspiracy to manufacture and deliver
-# ILCS 720-5/8-2 + some other charge
-# Conspiracy charges get bumped down to the next lowest class of felony.
-# So, for the Class 2 felony drug conviction (720-570/401(d)), the corresponding
-# conspiracy charge would be a Class 3 Felony
-mfg_del_conspiracy_class_3_query = Q(final_statute='720-5\8-2(570\401D)')
 
 # Class A Misdemeanor
+
+# Attempted manufacture or delivery of Schedule IV substance
+# ILCS 720-5/8-4 + ILCS 720-570/401(g)
+# Normally, ILCS 720-570/401(g) would be a class 3 felony, but since it's
+# attempted, we downgrade to a class A misdemeanor
+mfg_del_att_sched_iv_class_3_query = Q(final_statute__icontains='720-5/8-4(720-570/401(G)')
 
 # Attempted Manufacture or delivery of lookalike substance
 # Normally, this would be a class 3 Felony, but because it's attempted, it's
@@ -250,12 +279,17 @@ mfg_del_att_lookalike_query = (Q(final_statute__iregex=r'720-570/404\(b\)') |
 # Class 2 Felony
 # < 5g Meth
 # ILCS 720-646/55(a)(2)(A)
-mfg_del_meth_lt_5g_query = Q(final_chrgdesc__iregex=r'METH DELIVERY\s{0,1}<5 GRAMS')
+mfg_del_meth_lt_5g_query = Q(final_chrgdesc__iregex=r'METH DEL(IVERY|)\s{0,1}(<|LESS THAN)\s{0,1}5 GRAMS')
 
 # Class 1 Felony
 # >= 5g, < 15g Meth
 # ILCS 720-646/55(a)(2)(B)
-mfg_del_meth_5_15_g_query = Q(final_chrgdesc="METH DELIVERY/5<15 GRAMS")
+mfg_del_meth_5_15_g_query = Q(final_chrgdesc__in=(
+  "METH DELIVERY/5<15 GRAMS",
+  # I'm a little less certain on this one, but couldn't figure out a better
+  # place to put it.
+  "POSS MANU CHEM/<15 GRAMS METH",
+))
 
 # Class 1 Felony
 # Aggrevated delivery < 5g Meth
@@ -277,7 +311,7 @@ mfg_del_cannibis_lte_2pt5_g_query = Q(final_statute__iregex=r'720-550/5\(a\)')
 # > 2.5g, <= 10g Cannibis
 # ILCS 720-550/5(b)
 # ILRS 56.5-705(b)
-mfg_del_cannibis_2pt5_10_g_query = (Q(final_statute__iregex=r'750-550/5\(b\)') |
+mfg_del_cannibis_2pt5_10_g_query = (Q(final_statute__iregex=r'720-550[/\\]5\(b\)') |
     Q(final_statute__iexact="56.5-705-B"))
 
 # Class 4 Felony
@@ -291,7 +325,7 @@ mfg_del_cannibis_10_30_g_query = (Q(final_statute__iexact="720-550/5(c)") |
 # > 30g, <= 500g Cannibis
 # ILCS 720-550/5(d)
 # ILRS 56.5-705-d
-mfg_del_cannibis_30_500_g_query = (Q(final_statute__icontains="720-550/5/(d)") |
+mfg_del_cannibis_30_500_g_query = (Q(final_statute__icontains="720-550/5(d)") |
     Q(final_statute__iexact="56.5-705-D"))
 
 # Class 2 Felony
@@ -399,6 +433,8 @@ mfg_del_class_1_felony_query = (
 )
 
 mfg_del_class_2_felony_query = (
+    mfg_del_att_cntft_sub_query |
+    mfg_del_class_2_other_amt_query |
     mfg_del_meth_lt_5g_query |
     mfg_del_cannibis_500_2000_g_query |
     mfg_del_cannibis_30_500_g_near_sch_query
@@ -406,7 +442,7 @@ mfg_del_class_2_felony_query = (
 
 mfg_del_class_3_felony_query = (
     mfg_del_att_class_2_query |
-    mfg_del_conspiracy_class_3_query |
+    mfg_del_conspiracy_class_2_query |
     mfg_del_cannibis_30_500_g_query |
     mfg_del_cannibis_10_30_g_near_sch_query
 )
@@ -417,6 +453,7 @@ mfg_del_class_4_felony_query = (
 )
 
 mfg_del_class_a_misd_query = (
+    mfg_del_att_sched_iv_class_3_query |
     mfg_del_att_lookalike_query |
     mfg_del_cannibis_2pt5_10_g_query |
     mfg_del_cannibis_lte_2pt5_g_near_sch_query |
@@ -442,7 +479,7 @@ mfg_del_uknwn_drug_query = (
     mfg_del_att_unkwn_query,
     mfg_del_unkwn_class_x_query |
     mfg_del_att_class_2_query |
-    mfg_del_conspiracy_class_3_query
+    mfg_del_conspiracy_class_2_query
 )
 
 # These charges are in addition to another drug charge.  They're
@@ -456,9 +493,13 @@ mfg_del_no_drug_query = (
 
 # The charge description or statute field identified a particular
 # section of the criminal code, but the code doesn't specify a 
-# particular drug type
+# particular drug type, or it's a drug with very little use
 mfg_del_other_drug_query = (
+  mfg_del_methaqualone_gt_30_g_query |
+  mfg_del_att_sched_iv_class_3_query |
   mfg_del_cntft_sub_query |
+  mfg_del_att_cntft_sub_query |
+  mfg_del_class_2_other_amt_query |
   mfg_del_att_lookalike_query |
   mfg_del_unauth_query 
 )
@@ -490,9 +531,6 @@ mfg_del_ecstasy_query = (
     mfg_del_ecstasy_gt_900_g_query |
     mfg_del_ecstasy_5_15_g_query
 )
-
-# TODO: Perhaps move this into an "other" category
-mfg_del_methaqualone_query = mfg_del_methaqualone_gt_30_g_query
 
 mfg_del_pcp_query = (
     mfg_del_pcp_gt_30g_query |
@@ -563,18 +601,18 @@ mfg_del_query = (
     mfg_del_meth_lt_5g_agg_query |
     mfg_del_cannibis_2000_5000_g_query |
     mfg_del_cannibis_500_2000_g_near_sch_query |
-    mfg_del_meth_lt_5g_query |
-    mfg_del_cannibis_500_2000_g_query |
-    mfg_del_cannibis_30_500_g_near_sch_query |
+    mfg_del_att_cntft_sub_query |
+    mfg_del_class_2_other_amt_query |
     mfg_del_meth_lt_5g_query |
     mfg_del_cannibis_500_2000_g_query |
     mfg_del_cannibis_30_500_g_near_sch_query |
     mfg_del_att_class_2_query |
-    mfg_del_conspiracy_class_3_query |
+    mfg_del_conspiracy_class_2_query |
     mfg_del_cannibis_30_500_g_query |
     mfg_del_cannibis_10_30_g_near_sch_query |
     mfg_del_cannibis_10_30_g_query |
     mfg_del_cannibis_2pt5_10_g_near_sch_query |
+    mfg_del_att_sched_iv_class_3_query |
     mfg_del_att_lookalike_query |
     mfg_del_cannibis_2pt5_10_g_query |
     mfg_del_cannibis_lte_2pt5_g_near_sch_query |
