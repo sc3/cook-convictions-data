@@ -21,7 +21,9 @@ START_DATE = datetime(month=1, day=1, year=2005)
 The date that our data begins.
 """
 
-class DispositionQuerySet(QuerySet):
+from convictions_data.query.drugs import *
+
+class DispositionQuerySet(DrugQuerySetMixin, QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
 
     def geocode(self, batch_size=100, timeout=1):
@@ -251,7 +253,7 @@ class DispositionQuerySet(QuerySet):
         return convictions
 
 
-class ConvictionQuerySet(QuerySet):
+class ConvictionQuerySet(DrugQuerySetMixin, QuerySet):
     """
     Custom QuerySet for filtering Convictions to categories of crimes.
 
@@ -341,6 +343,7 @@ class ConvictionQuerySet(QuerySet):
     stalking_iucr_query = Q(iucr_code__in=stalking_iucr_codes)
     violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
     drug_icur_query = Q(iucr_code__in=drug_iucr_codes)
+
     
     # TODO: Add queries based on charge description as workaround or supplement
     # to statutes that couldn't be coded to IUCR codes
@@ -402,6 +405,27 @@ class ConvictionQuerySet(QuerySet):
         return self.filter(self.sexual_assault_iucr_query |
             self.domestic_violence_iucr_query |
             self.violating_order_protection_iucr_query)
+
+    def drug_possession_crimes(self):
+        return self.filter(possession_chrgdesc_query)
+
+    def drug_mfg_delivery_crimes(self):
+        return self.filter(mfg_delivery_chrgdesc_query)
+
+    def cannabis_possession_crimes(self):
+        return self.filter(cannabis_possession_chrgdesc_query)
+
+    def cannabis_mfg_delivery_crimes(self):
+        return self.filter(cannabis_mfg_delivery_chrgdesc_query)
+
+    def non_cannabis_possession_crimes(self):
+        return self.filter(possession_chrgdesc_query).exclude(cannabis_query)
+
+    def non_cannabis_mfg_delivery_crimes(self):
+        return self.filter(mfg_delivery_chrgdesc_query).exclude(cannabis_query)
+
+    def dealing_in_school_area_crimes(self):
+        return self.filter(self.dealing_in_school_area_chrgdesc_query)
 
 
 class CommunityAreaQuerySet(GeoQuerySet):
