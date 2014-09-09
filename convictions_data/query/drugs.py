@@ -11,7 +11,7 @@ mfg_delivery_chrgdesc_query = (Q(final_chrgdesc__icontains="MAN/DEL") |
     Q(final_chrgdesc__icontains="MFG/DISTRIB") |
     Q(final_chrgdesc__icontains="MFG ") |
     Q(final_chrgdesc__iregex=r'DEL.*(CONT|SUB)') |
-    # HACK: THe final '[^E]+' is to avoid a false positive of 
+    # HACK: THe final '[^E]+' is to avoid a false positive of
     # "DELETE/FALSIFY TITLE DOCUMENT"
     Q(final_chrgdesc__iregex=r'^(AGG|ATT|ATTEMPT|CASUAL|EMP|METH|)[ \. ]*DEL[^E]+') |
     Q(final_chrgdesc__iregex=r'^(P[ \. ]*C[ \. ]*S[ \./]+|POSS(ES{1,2}(ION|)|)).*DEL'))
@@ -23,7 +23,7 @@ possession_chrgdesc_query = (Q(final_chrgdesc__iregex=r'POS{1,2}.*(CON|CTL|LOOK-
     Q(final_chrgdesc__iregex=r'POS{1,2}.*(CANN|COCA|METH|HERO|STEROID)') |
     Q(final_chrgdesc__iregex=r'POSS.*(GR|PILL|OBJECT)') |
     Q(final_chrgdesc__iregex=r'^POS{1,2}( OF| ) CAN(ABIS| )') |
-    # ILCS 720-570/406(a), 720-570/406.2(a) 
+    # ILCS 720-570/406(a), 720-570/406.2(a)
     Q(final_chrgdesc__icontains="SCRIPT") |
     # Ambiguous charge description.  We know this is a drug charge, and can
     # assume it's for possession based on the description, but we don't
@@ -43,7 +43,7 @@ drugs_in_penal_inst_chrgdesc_query = (Q(final_chrgdesc__iregex=r'(ATT(EMPT|)|).*
 
 drug_paraphernalia_query = Q(final_chrgdesc__icontains="PARAPHER")
 
-drug_trafficking_query = Q(final_chrgdesc__icontains="TRAFFIC") 
+drug_trafficking_query = Q(final_chrgdesc__icontains="TRAFFIC")
 
 cannabis_chrgdesc_query = Q(final_chrgdesc__icontains="CAN")
 cannabis_statute_query = Q(final_chrgdesc__icontains="720-550")
@@ -56,7 +56,7 @@ cannabis_possession_chrgdesc_query = (possession_chrgdesc_query &
 cannabis_chrgdesc_query = (cannabis_mfg_delivery_chrgdesc_query |
     cannabis_possession_chrgdesc_query)
 
-# It's easier to just exclude the cannabis convictions to get the non-cannabis 
+# It's easier to just exclude the cannabis convictions to get the non-cannabis
 # convictions rather than defining explicit queries
 
 # After reviewing all the different charge descriptions, it's hard to reliably
@@ -76,67 +76,20 @@ cannabis_chrgdesc_query = (cannabis_mfg_delivery_chrgdesc_query |
 
 # No drug, amount, class or amount specified
 mfg_del_unkwn_query = Q(final_statute="720-570/407.1")
-# These are in ILRS format.  The corresponding ILCS reference is 
+# These are in ILRS format.  The corresponding ILCS reference is
 # 720-5/8-4, 720-570/401
 mfg_del_att_unkwn_query = Q(final_statute__in=("38-8-4(1401 3)",
     "38-8-4/56.5-1401"))
 
-# Class 1 Felony
-# 720-570/401(c)
-
-# No drug specified
-mfg_del_class_1_no_drug_query = (Q(final_statute__iregex=r'720-570/401\s{0,1}\({0,1}C\){0,1}\s*$') |
-    Q(final_statute="56.5-1401-C"))
-
-# >= 1g, < 15g Heroin
-# 720-570/401(c)(1)
-mfg_del_heroin_1_15_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}c\){0,1}\({0,1}1\){0,1}')
-
-# >= 1g, < 15g Cocaine
-# 720-570/401(c)(2)
-mfg_del_cocaine_1_15_g_query = (
-    Q(final_statute__iregex=r'720[-\s]570[-/]401\s{0,1}\({0,1}c\){0,1}\s{0,1}\({0,1}2\){0,1}') |
-    # Records with this chargedesc have a statute of MFG/DEL 01-15 GR
-    # COCAINE/ANLG,720-570/401(C)
-    # From the description, it should be included 
-    Q(final_chrgdesc="MFG/DEL 01-15 GR COCAINE/ANLG")
-)
-
-# >= 5g, < 15g or >= 10 objects, < 15 objects LSD
-# ILCS 720-570/401(c)(7)
-mfg_del_lsd_5_15_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(7\)')
-
-# >= 5g, < 15g or >= 10 objects, < 15 objects Ecstasy
-# ILCS 720-570/401(c)(7.5)
-mfg_del_ecstasy_5_15_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}c\){0,1}\(7.5\)')
-
-# Class 1, >= 10g, < 30g PCP
-# ILCS 720-570/401(c)(11)
-mfg_del_pcp_10_30_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(10\)')
-
-# >= 50g, < 200g Other Schedule I & II drugs
-# ILCS 720-570/401(c)(11)
-mfg_del_sched_1_2_50_200_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(11\)')
-
-# Manufacture or delivery of a conterfeit substance
-# Class 1 Felony
-# ILCS 720-570/402(a)
-mfg_del_cntft_sub_query = Q(final_statute__iregex=r'56.5[-\(]1403[-A3]+\){0,1}')
-
-# Attempted manufacture or delivery of a conterfiet substance
-# Class 1 Felony, downgraded to Class 2
-# ILCS 720-5/8-4 + ILCS 720-570/402(a)
-mfg_del_att_cntft_sub_query = Q(final_statute__iregex=r'38-8-4[-\(]1403\s{0,1}[-A3]+\){0,1}')
-        
 # Class X Felony
-# From http://www.criminallawyerillinois.com/2010/02/22/what-is-a-class-x-felony-in-illinois/: 
+# From http://www.criminallawyerillinois.com/2010/02/22/what-is-a-class-x-felony-in-illinois/:
 # The Class X felony is, short of first degree murder, the most serious felony
 # offense on the books in Illinois. Upon a finding of guilt, the court cannot
 # sentence the defendant to probation. The offense has a mandatory minimum
 # sentence of 6-30 years in the Department of Corrections.
 # ILCS 720-570/401(a)
 
-# Class X Felony, no amount specified 
+# Class X Felony, no amount specified
 # ILCS 720-570/401(a)
 mfg_del_unkwn_class_x_query = (Q(final_statute__iregex=r'720-570/401\(a\)\s*$') |
     Q(final_statute="56.5-1401-B"))
@@ -215,6 +168,53 @@ mfg_del_pcp_gt_30g_query = (Q(final_statute__iregex=r'720-570/401\(a\)\(10\)') |
 # Class X, >= 200g other Schedule I & II drugs
 # ILCS 720-570/401(a)(11)
 mfg_del_sched_1_2_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(11\)')
+
+# Class 1 Felony
+# 720-570/401(c)
+
+# No drug specified
+mfg_del_class_1_no_drug_query = (Q(final_statute__iregex=r'720-570/401\s{0,1}\({0,1}C\){0,1}\s*$') |
+    Q(final_statute="56.5-1401-C"))
+
+# >= 1g, < 15g Heroin
+# 720-570/401(c)(1)
+mfg_del_heroin_1_15_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}c\){0,1}\({0,1}1\){0,1}')
+
+# >= 1g, < 15g Cocaine
+# 720-570/401(c)(2)
+mfg_del_cocaine_1_15_g_query = (
+    Q(final_statute__iregex=r'720[-\s]570[-/]401\s{0,1}\({0,1}c\){0,1}\s{0,1}\({0,1}2\){0,1}') |
+    # Records with this chargedesc have a statute of MFG/DEL 01-15 GR
+    # COCAINE/ANLG,720-570/401(C)
+    # From the description, it should be included
+    Q(final_chrgdesc="MFG/DEL 01-15 GR COCAINE/ANLG")
+)
+
+# >= 5g, < 15g or >= 10 objects, < 15 objects LSD
+# ILCS 720-570/401(c)(7)
+mfg_del_lsd_5_15_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(7\)')
+
+# >= 5g, < 15g or >= 10 objects, < 15 objects Ecstasy
+# ILCS 720-570/401(c)(7.5)
+mfg_del_ecstasy_5_15_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}c\){0,1}\(7.5\)')
+
+# Class 1, >= 10g, < 30g PCP
+# ILCS 720-570/401(c)(11)
+mfg_del_pcp_10_30_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(10\)')
+
+# >= 50g, < 200g Other Schedule I & II drugs
+# ILCS 720-570/401(c)(11)
+mfg_del_sched_1_2_50_200_g_query = Q(final_statute__iregex=r'720-570/401\(c\)\(11\)')
+
+# Manufacture or delivery of a conterfeit substance
+# Class 1 Felony
+# ILCS 720-570/402(a)
+mfg_del_cntft_sub_query = Q(final_statute__iregex=r'56.5[-\(]1403[-A3]+\){0,1}')
+
+# Attempted manufacture or delivery of a conterfiet substance
+# Class 1 Felony, downgraded to Class 2
+# ILCS 720-5/8-4 + ILCS 720-570/402(a)
+mfg_del_att_cntft_sub_query = Q(final_statute__iregex=r'38-8-4[-\(]1403\s{0,1}[-A3]+\){0,1}')
 
 # Manufacture or delivery, Class 2 Felony, other amount
 # ILCS 720-570/401(d)
@@ -362,7 +362,7 @@ mfg_del_cannibis_30_500_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(
 # ILCS 720-550/5.2(c)
 mfg_del_cannibis_10_30_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(c)")
 
-# Class 4 Felony 
+# Class 4 Felony
 # > 2.5g, <= 10g Cannibis near school
 # ILCS 720-550/5.2(d)
 mfg_del_cannibis_2pt5_10_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(d)")
@@ -390,7 +390,7 @@ mfg_del_penal_inst_query = Q(final_statute__iexact="720-5/31A-1.2(c)")
 # Unauthorized manufacture or delivery
 # This seems to mean when someone who is otherwise registered to manufacture
 # or deliver controlled substances does so in a way that is unauthorized.
-# Class A Misdemeanor 
+# Class A Misdemeanor
 mfg_del_unauth_query = Q(final_statute__iexact="720-570/406(a)(2)")
 
 # Let's combine these into queries by felony or misdemeanor class
@@ -425,7 +425,7 @@ mfg_del_class_1_felony_query = (
     mfg_del_pcp_10_30_g_query |
     mfg_del_sched_1_2_50_200_g_query |
     mfg_del_cntft_sub_query |
-    mfg_del_amph_gt_200_g_query | 
+    mfg_del_amph_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
     mfg_del_cannibis_2000_5000_g_query |
@@ -461,7 +461,7 @@ mfg_del_class_a_misd_query = (
 )
 
 mfg_del_class_b_misd_query = mfg_del_cannibis_lte_2pt5_g_query
-    
+
 mfg_del_unkwn_class_query = (
     mfg_del_unkwn_query |
     mfg_del_att_unkwn_query |
@@ -492,7 +492,7 @@ mfg_del_no_drug_query = (
 )
 
 # The charge description or statute field identified a particular
-# section of the criminal code, but the code doesn't specify a 
+# section of the criminal code, but the code doesn't specify a
 # particular drug type, or it's a drug with very little use
 mfg_del_other_drug_query = (
   mfg_del_methaqualone_gt_30_g_query |
@@ -501,7 +501,7 @@ mfg_del_other_drug_query = (
   mfg_del_att_cntft_sub_query |
   mfg_del_class_2_other_amt_query |
   mfg_del_att_lookalike_query |
-  mfg_del_unauth_query 
+  mfg_del_unauth_query
 )
 
 mfg_del_heroin_query = (
@@ -511,7 +511,7 @@ mfg_del_heroin_query = (
     mfg_del_heroin_gt_900_g_query |
     mfg_del_heroin_class_x_no_amt |
     mfg_del_heroin_1_15_g_query
-) 
+)
 
 mfg_del_cocaine_query = (
     mfg_del_cocaine_15_100_g_query |
@@ -547,7 +547,7 @@ mfg_del_amph_query = mfg_del_amph_gt_200_g_query
 mfg_del_meth_query = (
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
-    mfg_del_meth_lt_5g_query 
+    mfg_del_meth_lt_5g_query
 )
 
 mfg_del_cannibis_query = (
@@ -596,7 +596,7 @@ mfg_del_query = (
     mfg_del_pcp_10_30_g_query |
     mfg_del_sched_1_2_gt_200_g_query |
     mfg_del_cntft_sub_query |
-    mfg_del_amph_gt_200_g_query | 
+    mfg_del_amph_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
     mfg_del_cannibis_2000_5000_g_query |
@@ -658,4 +658,4 @@ class DrugQuerySetMixin(object, metaclass=DrugQuerySetMixinMeta):
     """
     # Python 3 ignores this.  Keep it here for possible backward
     # compatibility
-    __metaclass__ = DrugQuerySetMixinMeta 
+    __metaclass__ = DrugQuerySetMixinMeta
