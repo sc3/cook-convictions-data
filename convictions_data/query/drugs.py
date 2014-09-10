@@ -33,7 +33,7 @@ possession_chrgdesc_query = (Q(final_chrgdesc__iregex=r'POS{1,2}.*(CON|CTL|LOOK-
     # to look at the statute for these.
     Q(final_chrgdesc__in=("POSS ANY SUB WITH INTENT", "POSSESION")) |
     Q(final_chrgdesc__iregex=r'POSS.* WITH INTENT TO DEL') |
-    # Casual delivery of Cannibis, treat as possession based on statute
+    # Casual delivery of cannabis, treat as possession based on statute
     # description
     Q(final_chrgdesc__iregex=r'CAS.* DEL')
 )
@@ -167,7 +167,7 @@ mfg_del_pcp_gt_30g_query = (Q(final_statute__iregex=r'720-570/401\(a\)\(10\)') |
 
 # Class X, >= 200g other Schedule I & II drugs
 # ILCS 720-570/401(a)(11)
-mfg_del_sched_1_2_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(11\)')
+mfg_del_sched_1_2_gte_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(11\)')
 
 # Class 1 Felony
 # 720-570/401(c)
@@ -178,7 +178,7 @@ mfg_del_class_1_no_drug_query = (Q(final_statute__iregex=r'720-570/401\s{0,1}\({
 
 # >= 1g, < 15g Heroin
 # 720-570/401(c)(1)
-mfg_del_heroin_1_15_g_query = Q(final_statute__iregex=r'720-570[/\\]401\({0,1}c\){0,1}\({0,1}1\){0,1}')
+mfg_del_heroin_1_15_g_query = Q(final_statute__iregex=r'720[- ]570[/\\]401\({0,1}c\){0,1}\({0,1}1\){0,1}')
 
 # >= 1g, < 15g Cocaine
 # 720-570/401(c)(2)
@@ -221,7 +221,7 @@ mfg_del_att_cntft_sub_query = Q(final_statute__iregex=r'38-8-4[-\(]1403\s{0,1}[-
 # Use exact values here so we don't accidentally capture the attempted or
 # conspiracy charges (see below)
 mfg_del_class_2_other_amt_query = Q(final_statute__in=('720-570/401(D)',
-    '720-570/401(D)(I)'))
+    '720-570/401(D)(I)', '720-570/401-D'))
 
 # Attempted Class 2 Felony
 # Since these are attempted, they get downgraded to a Class 3 Felony
@@ -240,6 +240,7 @@ mfg_del_att_class_2_query = Q(final_statute__in=(
     '720-5/(8-4)401(D)',
     '720-570/401(D)(720-5/8-4))',
     '720-570/401(D)(720-5/8-4)',
+    '720 5/8-4 570 401(D)',
 ))
 
 # Conspiracy to manufacture and deliver
@@ -251,7 +252,11 @@ mfg_del_conspiracy_class_2_query = Q(final_statute='720-5\8-2(570\\401D)')
 
 # Commiting one of the other 720-570/401 crimes near a school, park or
 # public housing
-mfg_del_near_sch_pk_pub_hs_query = Q(final_statute__iregex=r'720-570/407\(b\)')
+# ILCS-570/407(b)
+mfg_del_near_sch_pk_pub_hs_query = (
+    Q(final_statute__iregex=r'720-570/407\(b\)') |
+    Q(final_statute__iexact='56.5.1407-B(2)')
+)
 
 # Committing one of the other 720-570/401 crimes either dealing to or employing
 # someone < 18
@@ -271,6 +276,15 @@ mfg_del_att_sched_iv_class_3_query = Q(final_statute__icontains='720-5/8-4(720-5
 # downgraded to a Class A misdemeanor
 mfg_del_att_lookalike_query = (Q(final_statute__iregex=r'720-570/404\(b\)') |
     Q(final_statute__in=("720 5/8-4 570/404B", "720-570(8-4)/404(B)", "720-570 8-4/404(B)")))
+
+# Chemical breakdown of illicit controlled substance 
+# It is unlawful for any person to possess any substance with the intent to use
+# the substance to facilitate the manufacture of any controlled substance other
+# than methamphetamine, any counterfeit substance, or any controlled substance
+# analog other than as authorized by this Act.
+# Class 4 felony
+# ILCS 720-570/401.5
+mfg_del_chemical_breakdown_query = Q(final_statute='720-570/401.5(a-5)') 
 
 # Meth
 # For meth charges, the statute doesn't indicate the amount, we'll have to go
@@ -296,92 +310,89 @@ mfg_del_meth_5_15_g_query = Q(final_chrgdesc__in=(
 # ILCS 720-646/55(b)
 mfg_del_meth_lt_5g_agg_query = Q(final_chrgdesc__in=("AGG DEL METH/PER<18/<5 GRAMS", "AGG DELMETH/SCHOOL/<5GRAMS"))
 
-# Cannibis
+# cannabis
 
-# Cannibis, amount not specified
+# cannabis, amount not specified
 # ILCS 720-550/5
-mfg_del_cannibis_no_amt_query = Q(final_statute="720-550/5")
+mfg_del_cannabis_no_amt_query = Q(final_statute="720-550/5")
 
 # Class B Misdemeanor
-# < 2.5g Cannibis
+# < 2.5g cannabis
 # ILCS 720-550/5(a)
-mfg_del_cannibis_lte_2pt5_g_query = Q(final_statute__iregex=r'720-550/5\(a\)')
+mfg_del_cannabis_lte_2pt5_g_query = Q(final_statute__iregex=r'720-550/5\(a\)')
 
 # Class A Misdemeanor
-# > 2.5g, <= 10g Cannibis
+# > 2.5g, <= 10g cannabis
 # ILCS 720-550/5(b)
 # ILRS 56.5-705(b)
-mfg_del_cannibis_2pt5_10_g_query = (Q(final_statute__iregex=r'720-550[/\\]5\(b\)') |
+mfg_del_cannabis_2pt5_10_g_query = (
+    Q(final_statute__iregex=r'720-550[/\\]5[-(/]+b\){0,1}') |
     Q(final_statute__iexact="56.5-705-B"))
 
 # Class 4 Felony
-# > 10g, <= 30g Cannibis
+# > 10g, <= 30g cannabis
 # ILCS 720-550/5(c)
 # ILRS 56.5-705-C
-mfg_del_cannibis_10_30_g_query = (Q(final_statute__iexact="720-550/5(c)") |
+mfg_del_cannabis_10_30_g_query = (
+    Q(final_statute__iregex=r'720-550/5[-(]c\){0,1}') |
     Q(final_statute__iexact="56.5-705-C"))
 
 # Class 3 Felony
-# > 30g, <= 500g Cannibis
+# > 30g, <= 500g cannabis
 # ILCS 720-550/5(d)
 # ILRS 56.5-705-d
-mfg_del_cannibis_30_500_g_query = (Q(final_statute__icontains="720-550/5(d)") |
+mfg_del_cannabis_30_500_g_query = (Q(final_statute__icontains="720-550/5(d)") |
     Q(final_statute__iexact="56.5-705-D"))
 
 # Class 2 Felony
-# > 500g, <= 2000g Cannibis
+# > 500g, <= 2000g cannabis
 # ILCS 720-550/5(e)
 # ILRS 56.5-705-e
-mfg_del_cannibis_500_2000_g_query = (Q(final_statute__iregex=r'720-550/5\({0,1}e\){0,1}') |
+mfg_del_cannabis_500_2000_g_query = (
+    Q(final_statute__iregex=r'720-550/5\({0,1}e\){0,1}') |
     Q(final_statute__iexact="56.5-705-E"))
 
 # Class 1 Felony
-# > 2000g, <= 5000g Cannibis
+# > 2000g, <= 5000g cannabis
 # ILCS 720-550/5(f)
-mfg_del_cannibis_2000_5000_g_query = Q(final_statute__iexact="720-550/5(f)")
+mfg_del_cannabis_2000_5000_g_query = Q(final_statute__iexact="720-550/5(f)")
 
 # Class X Felony
-# > 5000g Cannibis
+# > 5000g cannabis
 # ILCS 720-550/5(g)
-mfg_del_cannibis_gt_5000_g_query = Q(final_statute__iexact="720-550/5(g)")
+mfg_del_cannabis_gt_5000_g_query = Q(final_statute__iexact="720-550/5(g)")
 
-# Delivery of Cannibis near a school
+# Delivery of cannabis near a school
 
 # Class 1 Felony
-# > 500g, <= 2000g Cannibis near School
+# > 500g, <= 2000g cannabis near School
 # ILCS 720-550/5.2(a)
-mfg_del_cannibis_500_2000_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(a)")
+mfg_del_cannabis_500_2000_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(a)")
 
 # Class 2 Felony
-# > 30g, <= 500g Cannibis near School
+# > 30g, <= 500g cannabis near School
 # ILCS 720-550/5.2(b)
-mfg_del_cannibis_30_500_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(b)")
+mfg_del_cannabis_30_500_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(b)")
 
 # Class 3 Felony
-# > 10g, <= 30g Cannibis near School
+# > 10g, <= 30g cannabis near School
 # ILCS 720-550/5.2(c)
-mfg_del_cannibis_10_30_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(c)")
+mfg_del_cannabis_10_30_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(c)")
 
 # Class 4 Felony
-# > 2.5g, <= 10g Cannibis near school
+# > 2.5g, <= 10g cannabis near school
 # ILCS 720-550/5.2(d)
-mfg_del_cannibis_2pt5_10_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(d)")
+mfg_del_cannabis_2pt5_10_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(d)")
 
 # Class A Misdemeanor
-# <= 2.5g Cannibis near school
+# <= 2.5g cannabis near school
 # ILCS 720-550/5.2(e)
-mfg_del_cannibis_lte_2pt5_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(e)")
+mfg_del_cannabis_lte_2pt5_g_near_sch_query = Q(final_statute__iexact="720-550/5.2(e)")
 
-# Casual delivery of Cannibis
-# Treated same as possession
-# ILCS 720-550/6
-# TODO: Might need to break this down by amount based on charge description
-casual_del_cannibis_query = Q(final_statute="720-550/6")
-
-# Delivery of Cannibis to a minor (it's a bit more complicated than that)
+# Delivery of cannabis to a minor (it's a bit more complicated than that)
 # see http://www.ilga.gov/legislation/ilcs/ilcs3.asp?ActID=1937&ChapterID=53
 # ILCS 720-550/7
-mfg_del_cannibis_to_minor_query = Q(final_statute__icontains="720-550/7")
+mfg_del_cannabis_to_minor_query = Q(final_statute__icontains="720-550/7")
 
 # Delivery of drugs inside a penal institution
 # I think we should exclude these from our drug counts
@@ -393,7 +404,7 @@ mfg_del_penal_inst_query = Q(final_statute__iexact="720-5/31A-1.2(c)")
 # Class A Misdemeanor
 mfg_del_unauth_query = Q(final_statute__iexact="720-570/406(a)(2)")
 
-# Let's combine these into queries by felony or misdemeanor class
+# Manufacture or Delivery by Felony or Misdemeanor Class
 
 mfg_del_class_x_felony_query = (
     mfg_del_unkwn_class_x_query |
@@ -412,8 +423,8 @@ mfg_del_class_x_felony_query = (
     mfg_del_ecstasy_gt_900_g_query |
     mfg_del_methaqualone_gt_30_g_query |
     mfg_del_pcp_gt_30g_query |
-    mfg_del_sched_1_2_gt_200_g_query |
-    mfg_del_cannibis_gt_5000_g_query)
+    mfg_del_sched_1_2_gte_200_g_query |
+    mfg_del_cannabis_gt_5000_g_query)
 
 mfg_del_class_1_felony_query = (
     mfg_del_class_1_no_drug_query |
@@ -428,47 +439,48 @@ mfg_del_class_1_felony_query = (
     mfg_del_amph_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
-    mfg_del_cannibis_2000_5000_g_query |
-    mfg_del_cannibis_500_2000_g_near_sch_query
+    mfg_del_cannabis_2000_5000_g_query |
+    mfg_del_cannabis_500_2000_g_near_sch_query
 )
 
 mfg_del_class_2_felony_query = (
     mfg_del_att_cntft_sub_query |
     mfg_del_class_2_other_amt_query |
     mfg_del_meth_lt_5g_query |
-    mfg_del_cannibis_500_2000_g_query |
-    mfg_del_cannibis_30_500_g_near_sch_query
+    mfg_del_cannabis_500_2000_g_query |
+    mfg_del_cannabis_30_500_g_near_sch_query
 )
 
 mfg_del_class_3_felony_query = (
     mfg_del_att_class_2_query |
     mfg_del_conspiracy_class_2_query |
-    mfg_del_cannibis_30_500_g_query |
-    mfg_del_cannibis_10_30_g_near_sch_query
+    mfg_del_cannabis_30_500_g_query |
+    mfg_del_cannabis_10_30_g_near_sch_query
 )
 
 mfg_del_class_4_felony_query = (
-    mfg_del_cannibis_10_30_g_query |
-    mfg_del_cannibis_2pt5_10_g_near_sch_query
+    mfg_del_cannabis_10_30_g_query |
+    mfg_del_cannabis_2pt5_10_g_near_sch_query |
+    mfg_del_chemical_breakdown_query
 )
 
 mfg_del_class_a_misd_query = (
     mfg_del_att_sched_iv_class_3_query |
     mfg_del_att_lookalike_query |
-    mfg_del_cannibis_2pt5_10_g_query |
-    mfg_del_cannibis_lte_2pt5_g_near_sch_query |
+    mfg_del_cannabis_2pt5_10_g_query |
+    mfg_del_cannabis_lte_2pt5_g_near_sch_query |
     mfg_del_unauth_query
 )
 
-mfg_del_class_b_misd_query = mfg_del_cannibis_lte_2pt5_g_query
+mfg_del_class_b_misd_query = mfg_del_cannabis_lte_2pt5_g_query
 
 mfg_del_unkwn_class_query = (
     mfg_del_unkwn_query |
     mfg_del_att_unkwn_query |
     mfg_del_near_sch_pk_pub_hs_query |
     mfg_del_involving_minor_query |
-    mfg_del_cannibis_no_amt_query |
-    mfg_del_cannibis_to_minor_query
+    mfg_del_cannabis_no_amt_query |
+    mfg_del_cannabis_to_minor_query
 )
 
 # Aggregate by drug type
@@ -501,7 +513,8 @@ mfg_del_other_drug_query = (
   mfg_del_att_cntft_sub_query |
   mfg_del_class_2_other_amt_query |
   mfg_del_att_lookalike_query |
-  mfg_del_unauth_query
+  mfg_del_unauth_query |
+  mfg_del_chemical_breakdown_query
 )
 
 mfg_del_heroin_query = (
@@ -538,7 +551,7 @@ mfg_del_pcp_query = (
 )
 
 mfg_del_sched_1_2_query = (
-    mfg_del_sched_1_2_gt_200_g_query |
+    mfg_del_sched_1_2_gte_200_g_query |
     mfg_del_sched_1_2_50_200_g_query
 )
 
@@ -550,21 +563,21 @@ mfg_del_meth_query = (
     mfg_del_meth_lt_5g_query
 )
 
-mfg_del_cannibis_query = (
-    mfg_del_cannibis_gt_5000_g_query |
-    mfg_del_cannibis_2000_5000_g_query |
-    mfg_del_cannibis_500_2000_g_near_sch_query |
-    mfg_del_cannibis_500_2000_g_query |
-    mfg_del_cannibis_30_500_g_near_sch_query |
-    mfg_del_cannibis_30_500_g_query |
-    mfg_del_cannibis_10_30_g_near_sch_query |
-    mfg_del_cannibis_10_30_g_query |
-    mfg_del_cannibis_2pt5_10_g_near_sch_query |
-    mfg_del_cannibis_2pt5_10_g_query |
-    mfg_del_cannibis_lte_2pt5_g_near_sch_query |
-    mfg_del_cannibis_lte_2pt5_g_query |
-    mfg_del_cannibis_no_amt_query |
-    mfg_del_cannibis_to_minor_query
+mfg_del_cannabis_query = (
+    mfg_del_cannabis_gt_5000_g_query |
+    mfg_del_cannabis_2000_5000_g_query |
+    mfg_del_cannabis_500_2000_g_near_sch_query |
+    mfg_del_cannabis_500_2000_g_query |
+    mfg_del_cannabis_30_500_g_near_sch_query |
+    mfg_del_cannabis_30_500_g_query |
+    mfg_del_cannabis_10_30_g_near_sch_query |
+    mfg_del_cannabis_10_30_g_query |
+    mfg_del_cannabis_2pt5_10_g_near_sch_query |
+    mfg_del_cannabis_2pt5_10_g_query |
+    mfg_del_cannabis_lte_2pt5_g_near_sch_query |
+    mfg_del_cannabis_lte_2pt5_g_query |
+    mfg_del_cannabis_no_amt_query |
+    mfg_del_cannabis_to_minor_query
 )
 
 # All manufacturing or delivering drug charges
@@ -585,8 +598,8 @@ mfg_del_query = (
     mfg_del_ecstasy_gt_900_g_query |
     mfg_del_methaqualone_gt_30_g_query |
     mfg_del_pcp_gt_30g_query |
-    mfg_del_sched_1_2_gt_200_g_query |
-    mfg_del_cannibis_gt_5000_g_query |
+    mfg_del_sched_1_2_gte_200_g_query |
+    mfg_del_cannabis_gt_5000_g_query |
     mfg_del_class_1_no_drug_query |
     mfg_del_heroin_1_15_g_query |
     mfg_del_att_cocaine_gt_900_g_query |
@@ -594,40 +607,591 @@ mfg_del_query = (
     mfg_del_lsd_5_15_g_query |
     mfg_del_ecstasy_5_15_g_query |
     mfg_del_pcp_10_30_g_query |
-    mfg_del_sched_1_2_gt_200_g_query |
     mfg_del_cntft_sub_query |
     mfg_del_amph_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
-    mfg_del_cannibis_2000_5000_g_query |
-    mfg_del_cannibis_500_2000_g_near_sch_query |
+    mfg_del_cannabis_2000_5000_g_query |
+    mfg_del_cannabis_500_2000_g_near_sch_query |
     mfg_del_att_cntft_sub_query |
     mfg_del_class_2_other_amt_query |
     mfg_del_meth_lt_5g_query |
-    mfg_del_cannibis_500_2000_g_query |
-    mfg_del_cannibis_30_500_g_near_sch_query |
+    mfg_del_cannabis_500_2000_g_query |
+    mfg_del_cannabis_30_500_g_near_sch_query |
     mfg_del_att_class_2_query |
     mfg_del_conspiracy_class_2_query |
-    mfg_del_cannibis_30_500_g_query |
-    mfg_del_cannibis_10_30_g_near_sch_query |
-    mfg_del_cannibis_10_30_g_query |
-    mfg_del_cannibis_2pt5_10_g_near_sch_query |
+    mfg_del_cannabis_30_500_g_query |
+    mfg_del_cannabis_10_30_g_near_sch_query |
+    mfg_del_cannabis_10_30_g_query |
+    mfg_del_cannabis_2pt5_10_g_near_sch_query |
     mfg_del_att_sched_iv_class_3_query |
     mfg_del_att_lookalike_query |
-    mfg_del_cannibis_2pt5_10_g_query |
-    mfg_del_cannibis_lte_2pt5_g_near_sch_query |
+    mfg_del_cannabis_2pt5_10_g_query |
+    mfg_del_cannabis_lte_2pt5_g_near_sch_query |
     mfg_del_unauth_query |
-    mfg_del_cannibis_lte_2pt5_g_query |
+    mfg_del_cannabis_lte_2pt5_g_query |
     mfg_del_unkwn_query |
     mfg_del_att_unkwn_query |
     mfg_del_near_sch_pk_pub_hs_query |
     mfg_del_involving_minor_query |
-    mfg_del_cannibis_no_amt_query |
-    mfg_del_cannibis_to_minor_query
+    mfg_del_cannabis_no_amt_query |
+    mfg_del_cannabis_to_minor_query |
+    mfg_del_chemical_breakdown_query
 )
 
-# TODO: Include these somewhware. It's treated as possession
-# casual_del_cannibis_query
+# A catchall for drug possesion charges that are clearly in 
+# ILCS 720-570/402, but where the class of charge, type of
+# drug and amount aren't specified
+poss_ctl_sub_no_drug_no_amt_query = Q(final_statute__in=(
+    # There's no ILCS 720-570/402(f).  Just throw it in here
+    '720-570/402(F)',
+    'PCS',
+    '56.5-1402-B',
+))
+
+# Same as above, but attempted possession
+poss_ctl_sub_att_no_drug_no_amt_query = (
+    Q(final_statute__in=(
+        '720-570/8-4(720-570/402)',
+        '720-5/8-4-A//720-570/402',
+        '38-8-4/56.5-1402',
+        '720-570/8-4',
+        '720-570/8-4(A)',
+    )) |
+    Q(final_chrgdesc='ATTEMPT POSS CON SUB', final_statute='720-5/8-4(A)')
+)
+
+# Possession of controlled substance
+# Class 1 Felony
+# ILCS 720-570/402(a)
+poss_ctl_sub_class_1_unkwn_drug_query = Q(final_statute__in=(
+    '720-570/402A',
+    '56.5-1402-A',
+))
+
+# Possession >= 15g Heroin
+# Class 1 Felony
+# ILCS 720-570/402(a)(1)
+# Further subsections specify more exact amount ranges.  This query is to
+# catch the records that don't further specify the amount.
+poss_heroin_gte_15_g_query = Q(final_statute__iexact='720-570/402(a)(1)')
+
+# Possession >= 15g, < 100g Heroin
+# Class 1 Felony
+# ILCS 720-570/402(a)(1)(a)
+poss_heroin_15_100_g_query = Q(final_statute__iexact='720-570/402(a)(1)(a)')
+
+# Possession >= 100g, < 400 g Heroin
+# Class 1 Felony
+# ILCS 720-570/402(a)(1)(b)
+poss_heroin_100_400_g_query = Q(final_statute__iexact='720-570/402(a)(1)(b)')
+
+# Possession >= 400g, < 900 g Heroin
+# Class 1 Felony
+# ILCS 720-570/402(a)(1)(c)
+poss_heroin_400_900_g_query = Q(final_statute__iexact='720-570/402(a)(1)(c)')
+
+# Possession >= 900 g Heroin
+# Class 1 Felony
+# ILCS 720-570/402(a)(1)(d)
+poss_heroin_gte_900_g_query = Q(final_statute__iexact='720-570/402(a)(1)(d)')
+
+# Possession >= 15g Cocaine
+# Class 1 Felony
+# ILCS 720-570/402(a)(2)
+poss_cocaine_gte_15_g_query = Q(final_statute__iexact='720-570/402(a)(2)')
+
+# Possession >= 15g, < 100g Cocaine
+# Class 1 Felony
+# ILCS 720-570/402(a)(2)(a)
+poss_cocaine_15_100_g_query = (Q(final_statute='720-570/402-A-2-A') |
+    Q(final_statute__iexact='720-570/402(a)(2)(a)')
+)
+
+# Attempted Possession >= 15g, < 100g Cocaine
+# Class 2 Felony
+# ILCS 720-5/8-4 + ILCS 720-570/402(a)(2)(a)
+poss_cocaine_att_15_100_g_query = Q(final_statute__in=(
+    '720-5/(8-4)402(2)(A)',
+    '720-5/8-4 570/402A2A',
+)) 
+
+# Possession >= 100g, < 400g Cocaine
+# Class 1 Felony
+# ILCS 720-570/402(a)(2)(b)
+poss_cocaine_100_400_g_query = Q(final_statute__iexact='720-570/402(a)(2)(b)')
+
+# Possession >= 400g, < 900g Cocaine
+# Class 1 Felony
+# ILCS 720-570/402(a)(2)(c)
+poss_cocaine_400_900_g_query = Q(final_statute__iexact='720-570/402(a)(2)(c)')
+
+# Possession >= 900g Cocaine
+# Class 1 Felony
+# ILCS 720-570/402(a)(2)(d)
+poss_cocaine_gte_900_g_query = Q(final_statute__iexact='720-570/402(a)(2)(d)')
+
+# Possession >= 15g, < 100g Morphine
+# Class 1 Felony
+# ILCS 720-570/402(a)(3)(a)
+poss_morphine_15_100_g_query = Q(final_statute__iexact='720-570/402(a)(3)(a)')
+
+# Possession >= 200g Barbituric Acid
+# Class 1 Felony
+# ILCS 720-570/402(a)(5)
+poss_barbituric_gte_200_g_query = Q(final_statute__iexact='720-570/402(a)(5)')
+
+# Possession >= 200g Amphetamine
+# Class 1 Felony
+# ILCS 720-570/402(a)(6)
+poss_amphetamine_gte_200_g_query = Q(final_statute__iexact='720-570/402(a)(6)')
+
+# Possession Look-Alike Substance
+# Class C Misdemeanor
+# ILCS 720-570/404(c)
+poss_lookalike_query = Q(final_statute__iexact='720-570/404(c)')
+
+# Illegal Possession of Script Forms
+# Class 4 Felony
+# ILCS 720-570/406.2
+# It looks like many of these have a statue of ILCS 720-570/406(b)(6), which
+# is blank in web versions of the criminal code.
+# Perhaps this section was moved to ILCS 720-570/406.2
+poss_script_form_query = (
+    Q(final_statute__iexact='720-570/406(b)(6)') |
+    Q(final_statute__istartswith='720-570/406.2')
+)
+
+# Attempted Illegal Possession of Script Forms
+# Class 4 Felony, downgraded to Class A Misdemeanor
+# ILCS 720-5/8-4 + ILCS 720-570/406.2
+# It looks like many of these have a statue of ILCS 720-570/406(b)(6), which
+# is blank in web versions of the criminal code.
+poss_att_script_form_query = Q(final_statute__iregex=r'720-5/8-4(-A|)[^\w]*720-570/406[-/(]*B[-()]*6')
+
+# Possession >= 15g, < 100g or >= 15 objects, < 200 objects LSD
+# Class 1 Felony
+# ILCS 720-570/402(a)(7)(A)
+poss_lsd_15_100_g_query = Q(final_statute__icontains='720-570/402(a)(7)(A)')
+
+# Possession >= 400g, < 900g or >= 600 objects, < 1500 objects LSD
+# Class 1 Felony
+# ILCS 720-570/402(a)(7)(C)
+poss_lsd_400_900_g_query = Q(final_statute__icontains='720-570/402(a)(7)(C)')
+
+# Possession >= 15g, < 100g or >= 15 objects, < 200 objects Ecstasy
+# Class 1 Felony
+# ILCS 720-570/402(a)(7.5)(A)
+poss_ecstasy_15_100_g_query = Q(final_statute__icontains='720-570/402(A)(7.5)(A)')
+
+# Possession >= 100g, < 400g or >= 200 objects, < 600 objects
+# Class 1 Felony
+# ILCS 720-570/402(a)(7.5)(B)
+poss_ecstasy_100_400_g_query = Q(final_statute__icontains='720-570/402(a)(7.5)(B)')
+
+# Possession >= 30g PCP
+# Class 1 Felony
+# ILCS 720-570/402(a)(10)
+poss_pcp_gte_30_g_query = Q(final_statute__iexact='720-570/402(a)(10)')
+
+# Possession >= 30g Ketamine
+# Class 1 Felony
+# ILCS 720-570/402(a)(10.5)
+poss_ketamine_gte_30_g_query = Q(final_statute__iexact='720-570/402(a)(10.5)')
+
+# Possession >= 200g other Schedule ! & !!
+# Class 1 Felony
+# ILCS 720-570/402(a)(11)
+poss_sched_1_2_gte_200_g_query = Q(final_statute__iexact='720-570/402(a)(11)')
+
+# Possession, no class
+# This represents an additional penalty on top of a ILCS 720-570/402(a)
+# ILCS 720-570/402(b) / ILRS 56.5-1402(b)
+poss_no_class_no_drug_query = Q(final_statute__in=('56.5-1402-B'))
+
+# Possession, amount less than the ones specifed in ILCS 720-570/402(a)
+# Class 4 Felony
+# ILCS 720-570/402(c)
+poss_ctl_sub_class_4_query = Q(final_statute__iregex=r'^720[- ]570/402\s{0,1}\({0,1}-{0,1}c\){0,1}$')
+
+# Attempted Possession, amount less than the ones specified in ILCS
+# 720-570/402(a)
+# Class 4 Felony, downgraded to Class A misdemeanor
+# ILCS 720-5/8-4 + ILCS 720-570/402(c)
+poss_ctl_sub_att_class_4_query = (
+    Q(final_statute__iregex=r'720[-\s/]{0,1}(5|)(70|)[-/\s(]*8-4[-)(]*A{0,1}[(\s/)]*(720|)[-/]*(5|)(70|)[-/]402[-\s(]*c{0,1}') |
+    Q(final_statute__iregex=r'720-570[-/]*(5|)[/(]*8-4[()A(/]*402[\s(]*c') |
+    Q(final_statute__iregex=r'720-570/402\(c\)(5|)/8-4')
+)
+
+# Possession Steroids
+# Class C Misdemeanor (Class B for recent repeat offenders, but we'll gloss
+# over that here)
+# ILCS 720-570/402(d)
+poss_steroids_query = (
+    Q(final_statute__istartswith='720-570/402(d)') |
+    # There is no ILCS 720-5/402(d), assuming this is a typo and
+    # 720-570/402(d) was intended
+    Q(final_statute__iexact='720-5/402(d)')
+)
+
+# Meth
+
+# Meth charges are weird because they have statutes that are both in
+# ILCS 720-570/402(a)(6.5) (which seems deprecated) and 
+# ILCS 720-646/60.  For the records with ILCS 720-646/60 statutes, the
+# statute isn't specific enough to identify the amount, so we rely on
+# the charge description.
+
+# Possession < 5g Meth
+# Class 3 Felony
+# ILCS 720-646/60(b)(1)
+poss_meth_lt_5g_query = (
+    Q(final_statute__iexact='720-646/60(b)(1)') |
+    Q(final_chrgdesc__iregex=r'POSSESSION OF METH<\s*5\s*GRA(MS|)') |
+    Q(final_chrgdesc='POSS.OF METH')
+)
+
+# Attempted possession < 5g meth
+# ILCS 720-5/8-4 + ILCS 720-646/60(a)
+# Class 3 Felony, downgraded to Class A Misdemeanor
+# The statute or the charge description of these records don't indicate amount,
+# but the chrgclass fields indicate that the the original class was a class 3
+# felony and that the final class was a class A misdemeanor.  It's safe to
+# assume from this that we're talking about possession < 5g
+poss_meth_att_lt_5g_query = Q(final_statute__iregex=r'720-5/8-4[\s(]+720-646/60[(]*A[)]+')
+
+# Possession >= 5g, < 15g Meth
+# Class 2 Felony
+# ILCS 720-646/60(b)(2)
+poss_meth_5_15_g_query = (
+    Q(final_chrgdesc__istartswith='POSSESSION OF METH/5<15 G') |
+    Q(final_statute__iregex=r'720-646/60A{0,1}-B[-(]2[)]*')
+)
+
+# Possession >= 15g, < 100g Meth
+# Class 1 Felony
+# ILCS 720-646/60(b)(3)
+# Some of these records have weird ILCS references like ILCS
+# 720-570/402(a)(6.5)(a)
+poss_meth_15_100_g_query = (
+    Q(final_statute__iexact='720-570/402(a)(6.5)(a)') |
+    Q(final_statute__iexact='720-570/402(6.5)a') |
+    Q(final_chrgdesc__iexact='POSSESSION OF METH/15<100GRAMS')
+)
+
+# Possession >= 400 g, < 900g Meth
+# Class X Felony
+# ILCS 720-646/60(b)(5)
+# Some of these records have weird ILCS references like ILCS
+# 720-570/402(a)(6.5)(c)
+poss_meth_400_900_g_query = Q(final_statute='720-570/402-A-6.5-C') 
+
+# Possession >= 900g Meth
+# Class X Felony
+# ILCS 720-646/60(b)(6)
+# Some of these records have weird ILCS references like ILCS
+# 720-570/402(a)(6.5)(d)
+poss_meth_gte_900_g_query = Q(final_statute='720-570-402(A)(6.5)D')
+
+# Possession amount not specified Cannabis
+# ILCS 720-550/4
+# The ILRS reference below "56-1/2-440(D)" is wonky becase I couldn't
+# find a corresponding ILCS reference.
+poss_cannabis_amt_unknwn_query = Q(final_statute__in=('720-550/4.',
+    '56-1/2-440(D)'))
+
+# Attempted Possession amount not specified Cannabis
+# ILCS 720-5/8-4 + ILCS 720-550/4
+poss_cannabis_att_amt_unknwn_query = Q(final_statute='720/550-8-4')
+
+# Possession <= 2.5g Cannabis
+# Class C Misdemeanor
+# ILCS 720-550/4(a)
+poss_cannabis_lte_2pt5_g_query = Q(final_statute__iexact='720-550/4(a)')
+
+# Possession > 2.5g, <= 10g Cannabis
+# Class B Misdemeanor
+# ILCS 720-550/4(b)
+poss_cannabis_2pt5_10_g_query = Q(final_statute__iexact='720-550/4(b)')
+
+# Possession > 10g, <= 30g Cannabis
+# Class 4 Felony
+# ILCS 720-550/4(c)
+poss_cannabis_10_30_g_query = Q(final_statute__iregex='720-550(.0|)/4[-(]{0,1}c[)]{0,1}')
+
+# Possession > 30g, <= 500g Cannabis
+# Class 4 Felony (class 3 for subsequent offenses)
+# ILCS 720-550/4(d)
+poss_cannabis_30_500_g_query = (
+    Q(final_statute__iregex=r'720[-\s](550|570)/4\(d\)') |
+    Q(final_chrgdesc='POSS CANNABIS 30-500 GRAMS')
+)
+
+# Possession > 500g, <= 2000g Cannabis
+# Class 3 Felony
+# ILCS 720-550/4(e)
+poss_cannabis_500_2000_g_query = Q(final_statute__iexact='720-550/4(e)')
+
+# Possession > 2000g, 5000g Cannabis
+# Class 2 Felony
+# ILCS 720-550/4(f)
+poss_cannabis_2000_5000_g_query = Q(final_statute__iregex='720-550/4[-(]+f\)')
+
+# Possession > 5000g Cannabis
+# Class 1 Felony
+# ILCS 720-550/4(g)
+poss_cannabis_gt_5000_g_query = Q(final_statute__iexact='720-550/4(g)')
+
+# Casual delivery of cannabis
+# Treated same as possession
+# ILCS 720-550/6
+
+# Casual delivery > 2.5g, <= 10g cannabis
+# Class B Misdemeanor 
+# ILCS 720-550/6
+casual_del_cannabis_2pt5_10_g_query = Q(final_statute='720-550/6',
+    final_chrgdesc='CASUAL DEL CAN/2.5 - 10 GRAMS')
+
+# Casual delivery > 10g, <= 30g cannabis
+# Class 4 Felony
+# ILCS 720-550/6
+casual_del_cannabis_10_30_g_query = Q(final_statute='720-550/6',
+    final_chrgdesc__iregex=r'CASUAL DEL CAN/10-30 GRAMS{0,1}')
+
+# Casual delivery > 30g, <= 500g Cannabis
+# Class 4 Felony (class 3 for susequent offenses)
+# ILCS 720-550/6
+casual_del_cannabis_30_500_g_query = Q(final_statute='720-550/6',
+    final_chrgdesc__iexact=r'CAS DEL CAN/30-500 GRAMS/SUBQ')
+
+# Possession of Cannabis plants
+# ILCS 720-550/8
+
+# Possession > 5, <= 20 Cannabis plants
+# Class 4 Felony
+# ILCS 720-550/8(b) 
+poss_cannabis_plants_5_20_query = Q(final_statute__iexact='720-550/8(B)')
+
+# Possession by Felony or Misdemeanor Class
+
+poss_unkwn_class_query = (
+    poss_ctl_sub_no_drug_no_amt_query |
+    poss_ctl_sub_att_no_drug_no_amt_query |
+    poss_cannabis_amt_unknwn_query |
+    poss_cannabis_att_amt_unknwn_query
+)
+
+poss_no_class_query = poss_no_class_no_drug_query
+
+poss_class_x_felony_query = (
+    poss_meth_400_900_g_query |
+    poss_meth_gte_900_g_query
+)
+
+poss_class_1_felony_query = (
+    poss_ctl_sub_class_1_unkwn_drug_query |
+    poss_heroin_gte_15_g_query |
+    poss_heroin_15_100_g_query |
+    poss_heroin_100_400_g_query |
+    poss_heroin_400_900_g_query |
+    poss_heroin_gte_900_g_query |
+    poss_cocaine_gte_15_g_query |
+    poss_cocaine_15_100_g_query |
+    poss_cocaine_100_400_g_query |
+    poss_cocaine_400_900_g_query |
+    poss_cocaine_gte_900_g_query |
+    poss_morphine_15_100_g_query |
+    poss_barbituric_gte_200_g_query |
+    poss_amphetamine_gte_200_g_query |
+    poss_lsd_15_100_g_query |
+    poss_lsd_400_900_g_query |
+    poss_ecstasy_15_100_g_query |
+    poss_ecstasy_100_400_g_query |
+    poss_pcp_gte_30_g_query |
+    poss_ketamine_gte_30_g_query |
+    poss_sched_1_2_gte_200_g_query |
+    poss_meth_15_100_g_query |
+    poss_cannabis_gt_5000_g_query
+)
+
+poss_class_2_felony_query = (
+    poss_cocaine_att_15_100_g_query |
+    poss_meth_5_15_g_query |
+    poss_cannabis_2000_5000_g_query
+)
+
+poss_class_3_felony_query = (
+    poss_meth_lt_5g_query |
+    poss_cannabis_500_2000_g_query
+)
+
+poss_class_4_felony_query = (
+    poss_script_form_query |
+    poss_ctl_sub_class_4_query |
+    poss_cannabis_10_30_g_query |
+    poss_cannabis_30_500_g_query |
+    casual_del_cannabis_10_30_g_query |
+    casual_del_cannabis_30_500_g_query |
+    poss_cannabis_plants_5_20_query
+)
+
+poss_class_a_misd_query = (
+    poss_att_script_form_query |
+    poss_ctl_sub_att_class_4_query |
+    poss_meth_att_lt_5g_query
+)
+
+
+poss_class_b_misd_query = (
+    poss_cannabis_2pt5_10_g_query |
+    casual_del_cannabis_2pt5_10_g_query
+)
+
+poss_class_c_misd_query = (
+    poss_lookalike_query |
+    poss_steroids_query |
+    poss_cannabis_lte_2pt5_g_query
+)
+
+# Drug possession by drug type
+
+poss_unkwn_drug_query = (
+    poss_ctl_sub_no_drug_no_amt_query |
+    poss_ctl_sub_att_no_drug_no_amt_query |
+    poss_ctl_sub_class_1_unkwn_drug_query |
+    poss_ctl_sub_class_4_query |
+    poss_ctl_sub_att_class_4_query
+)
+
+poss_heroin_query = (
+    poss_heroin_gte_15_g_query |
+    poss_heroin_15_100_g_query |
+    poss_heroin_100_400_g_query |
+    poss_heroin_400_900_g_query |
+    poss_heroin_gte_900_g_query
+)
+
+poss_cocaine_query = (
+    poss_cocaine_gte_15_g_query |
+    poss_cocaine_15_100_g_query |
+    poss_cocaine_att_15_100_g_query |
+    poss_cocaine_100_400_g_query |
+    poss_cocaine_400_900_g_query |
+    poss_cocaine_gte_900_g_query
+)
+
+poss_morphine_query = poss_morphine_15_100_g_query
+
+poss_barbituric_query = poss_barbituric_gte_200_g_query
+
+poss_amphetamine_query = poss_amphetamine_gte_200_g_query
+
+poss_lsd_query = (
+    poss_lsd_15_100_g_query |
+    poss_lsd_400_900_g_query
+)
+
+poss_ecstasy_query = (
+    poss_ecstasy_15_100_g_query |
+    poss_ecstasy_100_400_g_query
+)
+
+poss_pcp_query = poss_pcp_gte_30_g_query
+
+poss_ketamine_query = poss_ketamine_gte_30_g_query
+
+# Remember poss_steroids_query is defiend above
+
+poss_meth_query = (
+    poss_meth_lt_5g_query |
+    poss_meth_5_15_g_query |
+    poss_meth_15_100_g_query |
+    poss_meth_400_900_g_query |
+    poss_meth_gte_900_g_query
+)
+
+poss_cannabis_query = (
+    poss_cannabis_amt_unknwn_query |
+    poss_cannabis_att_amt_unknwn_query |
+    poss_cannabis_lte_2pt5_g_query |
+    poss_cannabis_2pt5_10_g_query |
+    poss_cannabis_10_30_g_query |
+    poss_cannabis_30_500_g_query |
+    poss_cannabis_500_2000_g_query |
+    poss_cannabis_gt_5000_g_query |
+    casual_del_cannabis_2pt5_10_g_query |
+    casual_del_cannabis_10_30_g_query |
+    casual_del_cannabis_30_500_g_query |
+    poss_cannabis_plants_5_20_query
+)
+
+poss_sched_1_2_query = poss_sched_1_2_gte_200_g_query
+
+poss_other_drug_query = (
+    poss_lookalike_query |
+    poss_att_script_form_query |
+    poss_script_form_query
+)
+
+poss_no_drug_query = poss_no_class_no_drug_query
+
+# All drug possession charges
+
+poss_query = (
+    poss_ctl_sub_no_drug_no_amt_query |
+    poss_ctl_sub_att_no_drug_no_amt_query |
+    poss_ctl_sub_class_1_unkwn_drug_query |
+    poss_heroin_gte_15_g_query |
+    poss_heroin_15_100_g_query |
+    poss_heroin_100_400_g_query |
+    poss_heroin_400_900_g_query |
+    poss_heroin_gte_900_g_query |
+    poss_cocaine_gte_15_g_query |
+    poss_cocaine_15_100_g_query |
+    poss_cocaine_att_15_100_g_query |
+    poss_cocaine_100_400_g_query |
+    poss_cocaine_400_900_g_query |
+    poss_cocaine_gte_900_g_query |
+    poss_morphine_15_100_g_query |
+    poss_barbituric_gte_200_g_query |
+    poss_amphetamine_gte_200_g_query |
+    poss_lookalike_query |
+    poss_script_form_query |
+    poss_att_script_form_query |
+    poss_lsd_15_100_g_query |
+    poss_lsd_400_900_g_query |
+    poss_ecstasy_15_100_g_query |
+    poss_ecstasy_100_400_g_query |
+    poss_pcp_gte_30_g_query |
+    poss_ketamine_gte_30_g_query |
+    poss_sched_1_2_gte_200_g_query |
+    poss_ctl_sub_class_4_query |
+    poss_ctl_sub_att_class_4_query |
+    poss_steroids_query |
+    poss_meth_lt_5g_query |
+    poss_meth_att_lt_5g_query |
+    poss_meth_5_15_g_query |
+    poss_meth_15_100_g_query |
+    poss_meth_400_900_g_query |
+    poss_meth_gte_900_g_query |
+    poss_cannabis_amt_unknwn_query |
+    poss_cannabis_att_amt_unknwn_query |
+    poss_cannabis_lte_2pt5_g_query |
+    poss_cannabis_2pt5_10_g_query |
+    poss_cannabis_10_30_g_query |
+    poss_cannabis_30_500_g_query |
+    poss_cannabis_500_2000_g_query |
+    poss_cannabis_2000_5000_g_query |
+    poss_cannabis_gt_5000_g_query |
+    casual_del_cannabis_2pt5_10_g_query |
+    casual_del_cannabis_10_30_g_query |
+    casual_del_cannabis_30_500_g_query |
+    poss_cannabis_plants_5_20_query
+)
+
+# TODO: Check if felony/misdemenor classes in records line up with
+# charges
 
 def filter_method_from_query(q):
     """
@@ -647,7 +1211,8 @@ class DrugQuerySetMixinMeta(type):
         # we've defined above.  For example,
         # cls.mfg_del() is equivalent to cls.filter(mfg_del_query)
         for k, v in globals().items():
-            if k.startswith('mfg_del_') and k.endswith('_query'):
+            if ((k.startswith('mfg_del_') or k.startswith('poss_') or
+                    k.startswith('casual_del')) and k.endswith('_query')):
                 attr = k.replace('_query', '')
                 setattr(cls, attr, filter_method_from_query(v))
 
