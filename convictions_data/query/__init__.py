@@ -12,18 +12,18 @@ from djgeojson.serializers import Serializer as GeoJSONSerializer
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.signals import (pre_geocode_page, post_geocode_page)
 
+from convictions_data.query.drugs import DrugQuerySetMixin
+from convictions_data.query.age import AgeQuerySetMixin
+from convictions_data.query.sex import SexQuerySetMixin
 
 logger = logging.getLogger(__name__)
-
 
 START_DATE = datetime(month=1, day=1, year=2005)
 """
 The date that our data begins.
 """
 
-from convictions_data.query.drugs import *
-
-class DispositionQuerySet(DrugQuerySetMixin, QuerySet):
+class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
 
     def geocode(self, batch_size=100, timeout=1):
@@ -253,7 +253,7 @@ class DispositionQuerySet(DrugQuerySetMixin, QuerySet):
         return convictions
 
 
-class ConvictionQuerySet(DrugQuerySetMixin, QuerySet):
+class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):
     """
     Custom QuerySet for filtering Convictions to categories of crimes.
 
@@ -342,7 +342,7 @@ class ConvictionQuerySet(DrugQuerySetMixin, QuerySet):
     domestic_violence_iucr_query = Q(iucr_code__in=domestic_violence_iucr_codes)
     stalking_iucr_query = Q(iucr_code__in=stalking_iucr_codes)
     violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
-    drug_icur_query = Q(iucr_code__in=drug_iucr_codes)
+    drug_iucr_query = Q(iucr_code__in=drug_iucr_codes)
 
     
     # TODO: Add queries based on charge description as workaround or supplement
@@ -389,7 +389,7 @@ class ConvictionQuerySet(DrugQuerySetMixin, QuerySet):
         """
         Filter queryset to convictions for drug crimes.
         """
-        qs = self.filter(self.drug_icur_query)
+        qs = self.filter(self.drug_iucr_query)
         return qs
 
     def crimes_affecting_women(self):
@@ -406,26 +406,9 @@ class ConvictionQuerySet(DrugQuerySetMixin, QuerySet):
             self.domestic_violence_iucr_query |
             self.violating_order_protection_iucr_query)
 
-    def drug_possession_crimes(self):
-        return self.filter(possession_chrgdesc_query)
-
-    def drug_mfg_delivery_crimes(self):
-        return self.filter(mfg_delivery_chrgdesc_query)
-
-    def cannabis_possession_crimes(self):
-        return self.filter(cannabis_possession_chrgdesc_query)
-
-    def cannabis_mfg_delivery_crimes(self):
-        return self.filter(cannabis_mfg_delivery_chrgdesc_query)
-
-    def non_cannabis_possession_crimes(self):
-        return self.filter(possession_chrgdesc_query).exclude(cannabis_query)
-
-    def non_cannabis_mfg_delivery_crimes(self):
-        return self.filter(mfg_delivery_chrgdesc_query).exclude(cannabis_query)
-
-    def dealing_in_school_area_crimes(self):
-        return self.filter(self.dealing_in_school_area_chrgdesc_query)
+    def homicides(self):
+        return self.filter(self.homicide_iucr_query |
+            self.homicide_nonindex_iucr_query)
 
 
 class CommunityAreaQuerySet(GeoQuerySet):
