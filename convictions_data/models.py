@@ -6,292 +6,26 @@ import re
 import geopy.geocoders
 
 from django.db import models
-from django.db.models import Q, Min
+from django.db.models import Q
 from django.contrib.gis.db import models as geo_models
 from django.conf import settings
-from django.contrib.gis.db.models.query import GeoQuerySet
 from django.contrib.gis.geos import Point
-from django.core.paginator import Paginator
 
-from djgeojson.serializers import Serializer as GeoJSONSerializer
+from model_utils.managers import PassThroughManager
 
-
-from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
+from convictions_data.manager import (DispositionManager, CensusTractManager,
+    CommunityAreaManager)
+from convictions_data.query import ConvictionQuerySet
 from convictions_data.statute import get_iucr
-from convictions_data.signals import (pre_geocode_page, post_geocode_page,
-    post_load_spatial_data)
+from convictions_data.signals import post_load_spatial_data
+    
 
 logger = logging.getLogger(__name__)
 
 MAX_LENGTH=200
 
 ZIPCODE_RE = re.compile(r'^\d{5}$')
-
-START_DATE = datetime(month=1, day=1, year=2005)
-"""
-The date that our data begins.
-"""
-
-class DispositionQuerySet(models.query.QuerySet):
-    """Custom QuerySet that adds bulk geocoding capabilities"""
-
-    def geocode(self, batch_size=100, timeout=1):
-        geocoder = BatchOpenMapQuest(
-            api_key=settings.CONVICTIONS_GEOCODER_API_KEY,
-            timeout=timeout)
-        p = Paginator(self, batch_size)
-        for i in p.page_range:
-            pre_geocode_page.send(sender=self.__class__,
-                page_num=i, num_pages=p.num_pages)
-            self._geocode_batch(p.page(i), geocoder)
-            post_geocode_page.send(sender=self.__class__,
-                page_num=i, num_pages=p.num_pages)
-
-    def geocoded(self):
-        return self.exclude(lat=None, lon=None)
-
-    def ungeocoded(self):
-        return self.filter(lat=None, lon=None)
-
-    def load_from_raw(self, save=False):
-        for model in self:
-            model.load_from_raw()
-            if save:
-                model.save()
-
-        return self
-
-    def load_field_from_raw(self, field_name):
-        for model in self:
-            model.load_field_from_raw(field_name)
-
-        return self
-
-    def has_geocodable_address(self):
-        q = Q(st_address="")
-        q |= Q(zipcode="")
-        q |= (Q(state="") & Q(city=""))
-        return self.exclude(q)
-
-    def has_bad_address(self):
-        q = Q(state='') | Q(city='')
-        q = q & Q(zipcode='')
-        return self.filter(q)
-
-    @classmethod
-    def _geocode_batch(cls, page, geocoder):
-        addresses = [obj.geocoder_address for obj in page]
-        results = geocoder.batch_geocode(addresses)
-        for i in range(len(page.object_list)):
-            obj = page.object_list[i]
-            loc = results[i]
-            obj.lat = loc.latitude
-            obj.lon = loc.longitude
-            obj.save()
-
-    def chilike(self):
-        qs = self.exclude(city__iexact="Chicago").exclude(city__iexact="Chicago Heights").filter(city__istartswith="ch")
-        return list(set([c['city'] for c in qs.values('city')]))
-
-    def in_analysis(self):
-        # Limit records in our analysis to those with an initial date from 2005
-        # or later and an initial disposition date from 2005 or later
-        return self.filter(initial_date__gte=START_DATE,
-            chrgdispdate__gte=START_DATE)
-
-    def first_chrgdispdates(self):
-        """
-        Return a list of case numbers and the first charge disposition date
-        for that case.
-        """
-        return self.values('case_number')\
-            .annotate(first_chrgdispdate=Min('chrgdispdate'))\
-            .values_list('case_number', 'first_chrgdispdate')
-
-    def from_initial_chrgdispdate(self):
-        """
-        Filter this queryset to only dispositions from the first court date.
-
-        This produces a SQL query similar to:
-
-        SELECT * 
-        FROM convictions_data_disposition 
-        WHERE EXISTS(SELECT case_number
-            FROM convictions_data_disposition d2
-            WHERE d2.initial_date >= '2005-01-01' 
-            AND d2.chrgdispdate > '2005-01-01'
-            AND d2.case_number = "convictions_data_disposition"."case_number"
-            GROUP BY case_number
-            HAVING MIN(d2.chrgdispdate) = "convictions_data_disposition".chrgdispdate);
-        """
-        start_date = START_DATE.strftime("%Y-%m-%d")
-        extra_where = ("EXISTS(SELECT case_number "
-            "FROM convictions_data_disposition d2 "
-            "WHERE d2.initial_date >= '{}' "
-            "AND d2.chrgdispdate > '{}' "
-            "AND d2.case_number = \"convictions_data_disposition\".\"case_number\" "
-            "GROUP BY case_number "
-            "HAVING  MIN(d2.chrgdispdate) = \"convictions_data_disposition\".chrgdispdate)")
-        extra_where = extra_where.format(start_date, start_date)
-        return self.extra(where=[extra_where])
-
-    CONVICTION_IMPORT_FIELDS = [ 
-        'case_number',
-        'chrgdispdate',
-        'city',
-        'community_area',
-        'county',
-        'ctlbkngno',
-        'chrgdisp',
-        'dob',
-        'fbiidno',
-        'fgrprntno',
-        'final_statute',
-        'final_chrgdesc',
-        'final_chrgtype',
-        'final_chrgclass',
-        'id',
-        'iucr_category',
-        'iucr_code',
-        'sex',
-        'st_address',
-        'state',
-        'statepoliceid',
-        'zipcode',
-    ]
-
-    def create_convictions(self):
-        convictions = []
-        disp_ids = []
-        conviction = None
-        case_number = None
-        # Counter of number of dispositions we've processed, for logging
-        i = 1
-
-        # Build a cache of Community areas
-        community_area_cache = {ca.id: ca for ca in CommunityArea.objects.all()}
-
-        # Get all dispositions from the first court date for a case
-        # We use values so we can pass the dictionary as keyword arguments
-        # to construct a Conviction model
-        initial_dispositions = self.from_initial_chrgdispdate()\
-                .values(*self.CONVICTION_IMPORT_FIELDS)\
-                .order_by('case_number', 'final_statute')
-        num_dispositions = initial_dispositions.count()
-
-        for disp in initial_dispositions:
-            logger.info("Processing disposition {}/{}".format(i,
-                num_dispositions))
-            if disp['case_number'] != case_number:
-                case_number = disp['case_number']
-
-                if len(disp_ids):
-                    # There are still some dispositions where the conviction field
-                    # hasn't been updated.  Update these.
-                    Disposition.objects.filter(id__in=disp_ids).update(conviction=conviction)
-                # Within each case, we'll need to keep track of which statutes
-                # and disposition/statute pairs we've seen to know when to create
-                # a new disposition
-                statute_seen = set()
-                disp_seen = set()
-                conviction = None
-
-                # A list to hold the disposition primary keys that will get rolled
-                # up into a single conviction. We do this so we can update the
-                # disposition models with the relationship in a single query instead
-                # of one per record.
-                disp_ids = []
-
-            # Save the disposition ID for updating our foreign key later
-            disp_ids.append(disp['id'])
-
-
-            if disp['community_area'] is not None:
-                # Convert community area ids to community area objects
-                disp['community_area'] = community_area_cache[disp['community_area']]
-               
-            statute_disposition = (disp['final_statute'], disp['chrgdisp'])
-            if (disp['final_statute'] not in statute_seen or 
-                statute_disposition in disp_seen):
-                # There are two cases where we'll create a new conviction
-                # and update the conviction field on the disposition models:
-                #
-                # 1. If we haven't seen this statute in this case so far.
-                # 2. If we've seen this statute/disposition pairing before,
-                #    which we interpret as multiple counts of the same 
-                #    charge.
-
-                if conviction is not None:
-                    # We've already created a conviction for this case.
-                    # Before we create the next one, update the Disposition
-                    # models we've seen so far by setting their conviction
-                    # field to the previously created conviction.
-                    Disposition.objects.filter(id__in=disp_ids).update(conviction=conviction)
-                    disp_ids = []
-
-                # Create the conviction model and set the conviction field
-                # on the disposition models that were rolled up into this
-                # conviction.
-                #
-                # The way we have to do this is slow because we have to
-                # create each conviction individually.  Bulk create would be
-                # faster, but the id fields of the created models aren't
-                # populated, so we can't update the relationship on the
-                # disposition models.
-                # 
-                # See https://code.djangoproject.com/ticket/19527
-
-                # Remove some keys from our disposition dictionary so we can 
-                # just use the rest of the values to pass to the constructor
-                # for the Conviction model
-                del disp['id']
-                del disp['chrgdisp']
-
-                conviction = Conviction.objects.create(**disp)
-                logger.info("Created conviction {}".format(conviction))
-
-                # Add the newly-created conviction to the list that will
-                # ultimately be returned
-                convictions.append(conviction)
-
-            disp_seen.add(statute_disposition)
-            statute_seen.add(disp['final_statute'])
-
-            i += 1
-
-        return convictions
-
-
-class DispositionManager(models.Manager):
-    """Custom manager that uses DispositionQuerySet"""
-
-    def get_query_set(self):
-        return DispositionQuerySet(self.model, using=self._db)
-
-    def geocode(self):
-        return self.get_query_set().geocode()
-
-    def ungeocoded(self):
-        return self.get_query_set().ungeocoded()
-
-    def geocoded(self):
-        return self.get_query_set().geocoded()
-
-    def load_from_raw(self, save=False):
-        return self.get_query_set().load_from_raw(save)
-
-    def load_field_from_raw(self, field_name, save=False):
-        return self.get_query_set().load_field_from_raw(field_name, save)
-
-    def has_bad_address(self):
-        return self.get_query_set().has_bad_address()
-
-    def has_geocodable_address(self):
-        return self.get_query_set().has_geocodable_address()
-
-    def in_analysis(self):
-        return self.get_query_set().in_analysis()
 
 
 class RawDisposition(models.Model):
@@ -449,9 +183,11 @@ class Disposition(models.Model):
     # Spatial fields
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
-    community_area = models.ForeignKey('CommunityArea', null=True)
+    community_area = models.ForeignKey('CommunityArea', null=True,
+        on_delete=models.SET_NULL)
 
-    conviction = models.ForeignKey('Conviction', null=True)
+    conviction = models.ForeignKey('Conviction', null=True,
+        on_delete=models.SET_NULL)
 
     # Use a custom manager to add geocoding methods
     objects = DispositionManager()
@@ -538,9 +274,17 @@ class Disposition(models.Model):
 
     def _load_field_statute(self, val):
         self.statute = val
+
         if val:
-            self.iucr_code = get_iucr(val)
             self.final_statute = val
+
+            offenses = get_iucr(val)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+                       
         return self
 
 
@@ -564,9 +308,17 @@ class Disposition(models.Model):
 
     def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
+
         if val:
-            self.iucr_code = get_iucr(val)
             self.final_statute = val
+
+            offenses = get_iucr(val)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+
         return self
 
     def _load_field_ammndchrgdescr(self, val):
@@ -715,6 +467,24 @@ class Disposition(models.Model):
 
         return int(s)
 
+    @classmethod
+    def get_community_area_cache(cls):
+        try:
+            return cls._community_area_cache
+        except AttributeError:
+            cls._community_area_cache = {ca.id: ca for ca in CommunityArea.objects.all()}
+            return cls._community_area_cache
+
+    @classmethod
+    def create_conviction(cls, **kwargs):
+        """
+        Convenience method for creating a conviction from a disposition
+
+        This exists to avoid circular imports in DispositionQuerySet.
+
+        """
+        return Conviction.objects.create(**kwargs)
+
 
 class Conviction(models.Model):
     case_number = models.CharField(max_length=MAX_LENGTH, db_index=True)
@@ -746,7 +516,10 @@ class Conviction(models.Model):
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
 
-    community_area = models.ForeignKey('CommunityArea', null=True)
+    community_area = models.ForeignKey('CommunityArea', null=True,
+        on_delete=models.SET_NULL)
+
+    objects = PassThroughManager.for_queryset_class(ConvictionQuerySet)()
 
     def __str__(self):
         return "{} {} {}".format(self.case_number, self.chrgdispdate, self.final_statute)
@@ -804,112 +577,6 @@ class CensusFieldsMixin(geo_models.Model):
     class Meta:
         abstract = True
 
-class CommunityAreaQuerySet(GeoQuerySet):
-    GEOJSON_FIELDS = [
-        'number',
-        'name',
-        'total_population',
-        'num_convictions',
-        'convictions_per_capita',
-        'num_homicides',
-        'boundary',
-    ]
-    """
-    Fields included in GeoJSON export
-    """
-
-    def with_conviction_annotations(self):
-        """
-        Annotate the QuerySet with counts based on related convictions stats
-
-        Returns:
-            A QuerySet with the following annotated fields added to the models:
-
-            * num_convictions: Total number of convictions in the geography.
-            * convictions_per_capita: Population-adjusted count of all
-               convictions.
-
-
-        """
-        this_table = self.model._meta.db_table
-        conviction_table = Conviction._meta.db_table
-        annotated_qs = self
-        # Use the ``extra()`` QuerySet method to annotate this QuerySet
-        # with aggregates based on a filtered, joined table.
-        # This method was suggested by
-        # http://timmyomahony.com/blog/filtering-annotations-django/
-
-        # First, define some SQL strings to make this stuff a little easier
-        # to read.
-        matches_this_id_where_sql = ('{conviction_table}.community_area_id = '
-            '{this_table}.id').format(conviction_table=conviction_table, this_table=this_table)
-
-        # It seems like we could just do the following query with the Count()
-        # aggregator, but the ORM adds the extra value from the select in the
-        # GROUP BY clause which breaks all kinds of stuff.
-        #
-        # I think this is reflected as
-        # https://code.djangoproject.com/ticket/11916
-        num_convictions_sql = ('SELECT COUNT({conviction_table}.id) '
-            'FROM {conviction_table} '
-            'WHERE {matches_this_id} '
-        ).format(conviction_table=conviction_table, this_table=this_table,
-            matches_this_id=matches_this_id_where_sql)
-        convictions_per_capita_sql = ('SELECT CAST(COUNT("{conviction_table}"."id") AS FLOAT) / '
-            '"{this_table}"."total_population" '
-            'FROM {conviction_table} '
-            'WHERE {matches_this_id} '
-        ).format(conviction_table=conviction_table, this_table=this_table,
-            matches_this_id=matches_this_id_where_sql)
-        num_homicides_sql = ('SELECT COUNT({conviction_table}.id) '
-            'FROM {conviction_table} '
-            'WHERE {matches_this_id} '
-            'AND {conviction_table}.iucr_category = "Homicide"'
-        ).format(conviction_table=conviction_table,
-            matches_this_id=matches_this_id_where_sql)
-
-        annotated_qs = annotated_qs.extra(select={
-            'num_convictions': num_convictions_sql,
-            'convictions_per_capita': convictions_per_capita_sql,
-            'num_homicides': num_homicides_sql,
-        })
-
-        return annotated_qs 
-
-    def geojson(self, simplify=0.0):
-        """
-        Serialize models in this QuerySet as a GeoJSON FeatureCollection.
-
-        Args:
-            simplify (float): Tolerance value to use when simplifying the
-                geometry fields of the models. Default is 0.  
-
-        Returns:
-            GeoJSON string representing a FeatureCollection containing each
-            model as a feature.
-
-        """
-        # Use a ValuesQuerySet so pk, model name and other cruft aren't
-        # included in the serialized output.
-        vqs = self.with_conviction_annotations().values(*self.GEOJSON_FIELDS)
-
-        return GeoJSONSerializer().serialize(vqs,
-            simplify=simplify,
-            geometry_field='boundary')
-
-
-class CommunityAreaManager(geo_models.GeoManager):
-    def get_queryset(self):
-        return CommunityAreaQuerySet(self.model, using=self._db)
-
-    def aggregate_census_fields(self):
-        for ca in self.get_query_set():
-            ca.aggregate_census_fields()
-            ca.save()
-
-    def geojson(self, simplify=0.0):
-        return self.get_queryset().geojson(simplify=simplify)
-
 
 class CommunityArea(CensusFieldsMixin, geo_models.Model):
     """
@@ -960,13 +627,9 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
         setattr(self, moe_field, aggregate_moe)
         return aggregate, aggregate_moe
 
-
-class CensusTractManager(geo_models.GeoManager):
-    def set_community_area_relations(self):
-        for tract in self.get_query_set().all():
-            ca = CommunityArea.objects.get(number=tract.community_area_number)
-            tract.community_area = ca
-            tract.save()
+    @classmethod
+    def get_conviction_model(cls):
+        return Conviction
 
 
 class CensusTract(CensusFieldsMixin, geo_models.Model):
@@ -987,7 +650,8 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
     # Spatial fields
     boundary = geo_models.MultiPolygonField()
 
-    community_area = geo_models.ForeignKey(CommunityArea, null=True)
+    community_area = geo_models.ForeignKey(CommunityArea, null=True,
+        on_delete=models.SET_NULL)
 
     objects = CensusTractManager()
 
@@ -1004,6 +668,10 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
 
     def __str__(self):
         return self.geoid10
+
+    @classmethod
+    def get_community_area_model(cls):
+        return CommunityArea
 
 
 def handle_post_load_spatial_data(sender, **kwargs):
