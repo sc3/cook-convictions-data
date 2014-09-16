@@ -48,14 +48,14 @@ Load raw dispositions data
 
 
 Populate clean disposition records
----------------------------------
+----------------------------------
 
 ::
 
     ./manage.py create_dispositions
 
 Geocode disposition records
---------------------------
+---------------------------
 
 ::
 
@@ -71,9 +71,18 @@ Load census data
     ./manage.py load_aff_data data/ACS_10_5YR_B19301_with_ann-per_capita_income.csv per_capita_income GEO.id2 HD01_VD01 HD02_VD01
 
 
+Extract Chicago's border from a shapefile
+-----------------------------------------
+
+::
+
+    ./manage.py chicago_geojson_from_shp data/tl_2010_17_place10/tl_2010_17_place10.shp > chicago.json 
+
+
 Other datasets
 ==============
 
 * `Boundaries - Community Areas (current) <https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6>`_ 
 * `Cook County Municipalities <https://datacatalog.cookcountyil.gov/GIS-Maps/ccgisdata-Municipality/ta8t-zebk>`_
+* `2010 Illinois Census Place TIGER Shapefile <http://www2.census.gov/geo/tiger/TIGER2010/PLACE/2010/tl_2010_17_place10.zip>`_
 * `Boundaries - Census Tracts - 2010 <https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik>`_
