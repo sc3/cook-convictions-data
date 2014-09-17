@@ -6,13 +6,15 @@ class Command(BaseCommand):
     help = "Detect community area of geocoded disposition"
 
     def handle(self, *args, **options):
-        # Only detect boundaries for dispositions that don't have a community
-        # area set.
-        models = Disposition.objects.geocoded().filter(community_area=None)
+        # Only detect boundaries for dispositions that don't have either
+        # a community area or census place set.
+        models = Disposition.objects.geocoded().filter(community_area=None,
+            place=None)
         i = 1
+        num_models = models.count()
         for disposition in models:
             msg = "Detecting boundaries of disposition {}/{} ... ".format(i,
-                models.count())
+                num_models)
             self.stdout.write(msg, ending='')                
 
             if disposition.boundarize():

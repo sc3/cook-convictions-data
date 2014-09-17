@@ -4,7 +4,7 @@ import logging
 from django.conf import settings
 from django.contrib.gis.db.models.query import GeoQuerySet
 from django.core.paginator import Paginator
-from django.db.models import Q, Min
+from django.db.models import Count, Min, Q, Sum
 from django.db.models.query import QuerySet
 
 from djgeojson.serializers import Serializer as GeoJSONSerializer
@@ -159,8 +159,9 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         # Counter of number of dispositions we've processed, for logging
         i = 1
 
-        # Build a cache of Community areas
+        # Build a cache of Community areas and places
         community_area_cache = self.model.get_community_area_cache() 
+        place_cache = self.model.get_place_cache()
 
         # Get all dispositions from the first court date for a case
         # We use values so we can pass the dictionary as keyword arguments
@@ -200,6 +201,10 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
             if disp['community_area'] is not None:
                 # Convert community area ids to community area objects
                 disp['community_area'] = community_area_cache[disp['community_area']]
+
+            if disp['place'] is not None:
+                # Convert place ids to community area objects
+                disp['place'] = place_cache[disp['place']]
                
             statute_disposition = (disp['final_statute'], disp['chrgdisp'])
             if (disp['final_statute'] not in statute_seen or 
@@ -411,16 +416,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
             self.homicide_nonindex_iucr_query)
 
 
-class CommunityAreaQuerySet(GeoQuerySet):
-    GEOJSON_FIELDS = [
-        'number',
-        'name',
-        'total_population',
-        'num_convictions',
-        'convictions_per_capita',
-        'num_homicides',
-        'boundary',
-    ]
+class ConvictionGeoQuerySet(GeoQuerySet):
     """
     Fields included in GeoJSON export
     """
@@ -440,6 +436,7 @@ class CommunityAreaQuerySet(GeoQuerySet):
         """
         this_table = self.model._meta.db_table
         conviction_table = self.model.get_conviction_model()._meta.db_table
+        conviction_related_col = self.model.get_conviction_related_column_name()
         annotated_qs = self
         # Use the ``extra()`` QuerySet method to annotate this QuerySet
         # with aggregates based on a filtered, joined table.
@@ -448,8 +445,9 @@ class CommunityAreaQuerySet(GeoQuerySet):
 
         # First, define some SQL strings to make this stuff a little easier
         # to read.
-        matches_this_id_where_sql = ('{conviction_table}.community_area_id = '
-            '{this_table}.id').format(conviction_table=conviction_table, this_table=this_table)
+        matches_this_id_where_sql = ('{conviction_table}.{related_col} = '
+            '{this_table}.id').format(conviction_table=conviction_table,
+                this_table=this_table, related_col=conviction_related_col)
 
         # It seems like we could just do the following query with the Count()
         # aggregator, but the ORM adds the extra value from the select in the
@@ -498,8 +496,19 @@ class CommunityAreaQuerySet(GeoQuerySet):
         """
         # Use a ValuesQuerySet so pk, model name and other cruft aren't
         # included in the serialized output.
-        vqs = self.with_conviction_annotations().values(*self.GEOJSON_FIELDS)
+        vqs = self.with_conviction_annotations().values(*self.model.GEOJSON_FIELDS)
 
         return GeoJSONSerializer().serialize(vqs,
             simplify=simplify,
             geometry_field='boundary')
+
+    def convictions_per_capita(self):
+        """Calculate the aggregate convictions per capita for the entire QuerySet"""
+        total_convictions = self.aggregate(total_convictions=Count('conviction'))['total_convictions']
+        total_population = self.aggregate(total_population=Sum('total_population'))['total_population']
+       
+        return float(total_convictions / total_population)
+
+class CensusPlaceQueryset(ConvictionGeoQuerySet):
+    def chicago_suburbs(self):
+        return self.filter(in_chicago_msa=True).exclude(name='Chicago')

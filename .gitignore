@@ -3,6 +3,13 @@
 *.log
 __pycache__
 .ipynb_checkpoints
-data
 convictions/settings/dev.py
 convictions.sqlite3
+data/ACS_10_5YR_B01003_with_ann*.csv
+data/ACS_10_5YR_B19301_with_ann*.csv
+data/CensusTracts2010/
+data/Comm_20Areas/
+data/Criminal_Convictions_ALLCOOK_05-09.csv
+data/Municipality/
+data/tl_2010_17_place10/
+

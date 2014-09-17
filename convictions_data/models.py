@@ -14,8 +14,9 @@ from django.contrib.gis.geos import Point
 from model_utils.managers import PassThroughManager
 
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
-from convictions_data.manager import (DispositionManager, CensusTractManager,
-    CommunityAreaManager)
+from convictions_data.manager import (CensusPlaceManager,
+    CensusTractManager, CommunityAreaManager, DispositionManager)
+   
 from convictions_data.query import ConvictionQuerySet
 from convictions_data.statute import get_iucr
 from convictions_data.signals import post_load_spatial_data
@@ -185,6 +186,7 @@ class Disposition(models.Model):
     lon = models.FloatField(null=True)
     community_area = models.ForeignKey('CommunityArea', null=True,
         on_delete=models.SET_NULL)
+    place = models.ForeignKey('CensusPlace', null=True, on_delete=models.SET_NULL)
 
     conviction = models.ForeignKey('Conviction', null=True,
         on_delete=models.SET_NULL)
@@ -340,13 +342,18 @@ class Disposition(models.Model):
         return self
 
     def boundarize(self):
+        pnt = Point(self.lon, self.lat)
         try:
-            pnt = Point(self.lon, self.lat)
             self.community_area = CommunityArea.objects.get(boundary__contains=pnt)
             self.save()
             return self.community_area
         except CommunityArea.DoesNotExist:
-            return False
+            try:
+                self.place = CensusPlace.objects.get(boundary__contains=pnt)
+                self.save()
+                return self.place
+            except CensusPlace.DoesNotExist:
+                return False
 
        
     @classmethod
@@ -476,6 +483,14 @@ class Disposition(models.Model):
             return cls._community_area_cache
 
     @classmethod
+    def get_place_cache(cls):
+        try:
+            return cls._place_cache
+        except AttributeError:
+            cls._place_cache = {ca.id: ca for ca in CensusPlace.objects.all()}
+            return cls._place_cache
+
+    @classmethod
     def create_conviction(cls, **kwargs):
         """
         Convenience method for creating a conviction from a disposition
@@ -518,6 +533,9 @@ class Conviction(models.Model):
 
     community_area = models.ForeignKey('CommunityArea', null=True,
         on_delete=models.SET_NULL)
+    place = models.ForeignKey('CensusPlace', null=True,
+        on_delete=models.SET_NULL)
+
 
     objects = PassThroughManager.for_queryset_class(ConvictionQuerySet)()
 
@@ -578,7 +596,22 @@ class CensusFieldsMixin(geo_models.Model):
         abstract = True
 
 
-class CommunityArea(CensusFieldsMixin, geo_models.Model):
+class ConvictionsAggregateMixin(object):
+    @classmethod
+    def get_conviction_model(cls):
+        return Conviction
+
+GEOJSON_FIELDS_BASE = [
+    'name',
+    'total_population',
+    'num_convictions',
+    'convictions_per_capita',
+    'num_homicides',
+    'boundary',
+]
+
+
+class CommunityArea(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model):
     """
     Chicago Community Area
 
@@ -601,6 +634,10 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
         'shape_len': 'SHAPE_LEN',
         'boundary': 'MULTIPOLYGON',
     }
+
+    GEOJSON_FIELDS = GEOJSON_FIELDS_BASE + [
+        'number',
+    ]
 
     def __str__(self):
         return self.name
@@ -628,8 +665,8 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
         return aggregate, aggregate_moe
 
     @classmethod
-    def get_conviction_model(cls):
-        return Conviction
+    def get_conviction_related_column_name(cls):
+        return 'community_area_id'
 
 
 class CensusTract(CensusFieldsMixin, geo_models.Model):
@@ -672,6 +709,68 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
     @classmethod
     def get_community_area_model(cls):
         return CommunityArea
+
+
+class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model):
+    """
+    Census Place
+
+    Wraps TIGER Shapefile http://www2.census.gov/geo/tiger/TIGER2010/PLACE/2010/tl_2010_17_place10.zip
+
+    """
+    # From ShapeFile
+    statefp10 = geo_models.CharField(max_length=2)
+    placefp10 = geo_models.CharField(max_length=5)
+    placens10 = geo_models.CharField(max_length=8)
+    geoid10 = geo_models.CharField(max_length=11, db_index=True)
+    name = geo_models.CharField(max_length=7, db_index=True)
+    namelsad10 = geo_models.CharField(max_length=100)
+    lsad10 = geo_models.CharField(max_length=2)
+    classfp10 = geo_models.CharField(max_length=2)
+    pcicbsa10 = geo_models.CharField(max_length=1)
+    pcinecta10 = geo_models.CharField(max_length=1)
+    mtfcc10 = geo_models.CharField(max_length=5)
+    funcstat10 = geo_models.CharField(max_length=1)
+    aland10 = geo_models.FloatField()
+    awater10 = geo_models.FloatField()
+    intptlat10 = geo_models.CharField(max_length=11)
+    intptlon10 = geo_models.CharField(max_length=12)
+
+    # Custom Fields
+    in_chicago_msa = geo_models.BooleanField(default=False,
+        help_text=("Is this place within one of the counties that is part "
+            "of Chicago's Metropolitan Statistical Area: Cook, DeKalb, "
+            "DuPage, Grundy, Kane, Kendall, McHenry, Will, Lake"))
+
+    # Spatial fields
+    boundary = geo_models.MultiPolygonField()
+
+    objects = CensusPlaceManager() 
+
+    FIELD_MAPPING = {
+        'placefp10': 'PLACEFP10',
+        'placens10': 'PLACENS10',
+        'geoid10': 'GEOID10',
+        'name': 'NAME10',
+        'namelsad10': 'NAMELSAD10',
+        'lsad10': 'LSAD10',
+        'classfp10': 'CLASSFP10',
+        'pcicbsa10': 'PCICBSA10',
+        'pcinecta10': 'PCINECTA10',
+        'mtfcc10': 'MTFCC10',
+        'funcstat10': 'FUNCSTAT10',
+        'aland10': 'ALAND10',
+        'awater10': 'AWATER10',
+        'intptlat10': 'INTPTLAT10',
+        'intptlon10': 'INTPTLON10',
+        'boundary': 'MULTIPOLYGON',
+    }
+
+    GEOJSON_FIELDS = GEOJSON_FIELDS_BASE
+
+    @classmethod
+    def get_conviction_related_column_name(cls):
+        return 'place_id'
 
 
 def handle_post_load_spatial_data(sender, **kwargs):
