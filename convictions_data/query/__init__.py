@@ -12,7 +12,8 @@ from djgeojson.serializers import Serializer as GeoJSONSerializer
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.signals import (pre_geocode_page, post_geocode_page)
 
-from convictions_data.query.drugs import DrugQuerySetMixin
+from convictions_data.query.drugs import (DrugQuerySetMixin, mfg_del_query,
+    poss_query)
 from convictions_data.query.age import AgeQuerySetMixin
 from convictions_data.query.sex import SexQuerySetMixin
 
@@ -349,6 +350,20 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
     violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
     drug_iucr_query = Q(iucr_code__in=drug_iucr_codes)
 
+    violent_iucr_query = (homicide_iucr_query | sexual_assault_iucr_query |
+        robbery_iucr_query | agg_battery_iucr_query |
+        agg_assault_iucr_query)
+
+    violent_nonindex_iucr_query = (homicide_nonindex_iucr_query |
+            agg_assault_nonindex_iucr_query |
+            agg_battery_nonindex_iucr_query)
+
+    property_iucr_query = (burglary_iucr_query | theft_iucr_query |
+            motor_vehicle_theft_iucr_query | arson_iucr_query)
+
+    crimes_affecting_women_iucr_query = (sexual_assault_iucr_query |
+        domestic_violence_iucr_query |
+        violating_order_protection_iucr_query)
     
     # TODO: Add queries based on charge description as workaround or supplement
     # to statutes that couldn't be coded to IUCR codes
@@ -365,13 +380,9 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Agg Battery / Agg Assault (as a single category for UCR)
 
         """
-        qs = self.filter(self.homicide_iucr_query | self.sexual_assault_iucr_query |
-            self.robbery_iucr_query | self.agg_battery_iucr_query |
-            self.agg_assault_iucr_query)
+        qs = self.filter(self.violent_iucr_query)
         # Exclude non-index crimes
-        qs = qs.exclude(self.homicide_nonindex_iucr_query |
-            self.agg_assault_nonindex_iucr_query |
-            self.agg_battery_nonindex_iucr_query)
+        qs = qs.exclude(self.violent_nonindex_iucr_query)
         return qs
 
     def property_index_crimes(self):
@@ -385,8 +396,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Motor Vehicle Theft
         * Arson
         """
-        qs = self.filter(self.burglary_iucr_query | self.theft_iucr_query |
-            self.motor_vehicle_theft_iucr_query | self.arson_iucr_query)
+        qs = self.filter(self.property_iucr_query)
         qs = qs.exclude(self.arson_nonindex_iucr_query)
         return qs
 
@@ -394,7 +404,11 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         """
         Filter queryset to convictions for drug crimes.
         """
-        qs = self.filter(self.drug_iucr_query)
+        # The IUCR query misses a lot of values right now, probably because of
+        # annoying mangled statutes that combine the statute for the crime and
+        # the blanket statute for attempted crimes
+        #qs = self.filter(self.drug_iucr_query)
+        qs = self.filter(poss_query | mfg_del_query)
         return qs
 
     def crimes_affecting_women(self):
@@ -407,13 +421,17 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Domestic Violence
         * Stalking / Violation of Order of Protection:
         """
-        return self.filter(self.sexual_assault_iucr_query |
-            self.domestic_violence_iucr_query |
-            self.violating_order_protection_iucr_query)
+        return self.filter(self.crimes_affecting_women_iucr_query)
 
     def homicides(self):
         return self.filter(self.homicide_iucr_query |
             self.homicide_nonindex_iucr_query)
+
+    def other_crimes(self):
+        return self.exclude(self.violent_iucr_query |
+            self.property_iucr_query |
+            self.crimes_affecting_women_iucr_query |
+            poss_query | mfg_del_query)
 
 
 class ConvictionGeoQuerySet(GeoQuerySet):
