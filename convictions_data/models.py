@@ -607,6 +607,7 @@ GEOJSON_FIELDS_BASE = [
     'num_convictions',
     'convictions_per_capita',
     'num_homicides',
+    'num_affecting_women',
     'boundary',
 ]
 

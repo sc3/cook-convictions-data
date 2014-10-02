@@ -12,9 +12,15 @@ from djgeojson.serializers import Serializer as GeoJSONSerializer
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.signals import (pre_geocode_page, post_geocode_page)
 
+from convictions_data.query.age import AgeQuerySetMixin
 from convictions_data.query.drugs import (DrugQuerySetMixin, mfg_del_query,
     poss_query)
-from convictions_data.query.age import AgeQuerySetMixin
+from convictions_data.query.iucr import (
+    arson_nonindex_iucr_query,
+    crimes_affecting_women_iucr_codes, crimes_affecting_women_iucr_query,
+    homicide_iucr_query, homicide_nonindex_iucr_query,
+    property_iucr_query,
+    violent_iucr_query, violent_nonindex_iucr_query)
 from convictions_data.query.sex import SexQuerySetMixin
 
 logger = logging.getLogger(__name__)
@@ -266,105 +272,6 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
     These categories were selected by Tracy.
 
     """
-
-    # Categories of crimes, from IUCR codes
-    #
-    # These are based on CPD IUCR Codes on the City’s website:  
-    # CPD IUCR Codes on the City’s website:  
-    # https://data.cityofchicago.org/Public-Safety/Chicago-Police-Department-Illinois-Uniform-Crime-R/c7ck-438e
-
-    homicide_iucr_codes = ('0110', '0130', '0141', '0142')
-    homicide_nonindex_iucr_codes = ('0141', '0142')
-
-    sexual_assault_iucr_codes = ('0261', '0263', '0264', '0265',
-        '0266', '0271', '0272', '0273', '0274', '0275', '0281', '0291')
-
-    robbery_iucr_codes = ('0312', '0313', '0320', '0325', '0326',
-        '0330', '0331', '0334', '0337', '0340', '031A', '031B', '033A',
-        '033B')
-
-    agg_assault_iucr_codes = ('0520', '0530', '0550', '0551', '0552',
-        '0553', '0554', '0555', '0556', '0557', '0558', '051A', '051B')
-    agg_assault_nonindex_iucr_codes = ('0554',)
-    # The following are types of assault but don't seem to be aggrevated:
-    # 0545: "PRO EMP HANDS NO/MIN INJURY"
-    # 0560: "SIMPLE" 
-    non_agg_assault_iucr_codes = ('0545', '0560')
-
-    agg_battery_iucr_codes = ('0420', '0430', '0440', '0450', '0451', '0452',
-        '0453', '0454', '0461', '0462', '0479', '0480', '0481', '0482', '0483',
-        '0485', '0487', '0488', '0489', '0495', '0496', '0497', '0498',
-        '041A', '041B')
-    agg_battery_nonindex_iucr_codes = ('0440', '0454', '0487')
-    non_agg_battery_iucr_codes = ('0460', '0475', '0484', '0486')
-
-    burglary_iucr_codes = ('0610', '0620', '0630', '0650')
-
-    theft_iucr_codes = ('0810', '0820', '0840', '0841', '0842', '0843', '0850',
-        '0860', '0865', '0870', '0880', '0890', '0895')
-
-    motor_vehicle_theft_iucr_codes = ('0910', '0915', '0917', '0918', '0920',
-        '0925', '0927', '0928', '0930', '0935', '0937', '0938')
-
-    arson_iucr_codes = ('1010', '1020', '1025', '1030', '1035', '1090')
-    arson_nonindex_iucr_codes = ('1030', '1035')
-
-    # These aren't part of a category as defined as CPD.  We're grouping them
-    # ourselves.
-    # As such the battery charges get counted in the Agg battery / agg assault
-    # category and also get counted in the domestic violence category for the
-    # purposes of our project.  We will not displaying these numbers together so
-    # it should not be a problem.
-    domestic_violence_iucr_codes = ('0486', '0488', '0489', '0496', '0497',
-        '0498')
-
-    stalking_iucr_codes = ('0580', '0581', '0583')
-
-    violating_order_protection_iucr_codes = ('4387')
-
-    drug_iucr_codes = ('1811', '1812', '1821', '1822', '1840', '1850', '1860',
-        '2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018',
-        '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027',
-        '2028', '2029', '2030', '2031', '2032', '2040', '2050', '2060', '2070',
-        '2080', '2090', '2091', '2092', '2093', '2094', '2095', '2110', '2111',
-        '2120', '2160', '2170')
-
-    # Q objects that will be used in the call to filter()
-
-    homicide_iucr_query = Q(iucr_code__in=homicide_iucr_codes)
-    homicide_nonindex_iucr_query = Q(iucr_code__in=homicide_nonindex_iucr_codes)
-    sexual_assault_iucr_query = Q(iucr_code__in=sexual_assault_iucr_codes)
-    robbery_iucr_query = Q(iucr_code__in=robbery_iucr_codes)
-    agg_assault_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
-    agg_assault_nonindex_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
-    non_agg_assault_iucr_query = Q(iucr_code__in=non_agg_assault_iucr_codes) 
-    agg_battery_iucr_query = Q(iucr_code__in=agg_battery_iucr_codes)
-    agg_battery_nonindex_iucr_query = Q(iucr_code__in=agg_battery_nonindex_iucr_codes)
-    burglary_iucr_query = Q(iucr_code__in=burglary_iucr_codes)
-    theft_iucr_query = Q(iucr_code__in=theft_iucr_codes)
-    motor_vehicle_theft_iucr_query = Q(iucr_code__in=motor_vehicle_theft_iucr_codes)
-    arson_iucr_query = Q(iucr_code__in=arson_iucr_codes)
-    arson_nonindex_iucr_query = Q(iucr_code__in=arson_nonindex_iucr_codes)
-    domestic_violence_iucr_query = Q(iucr_code__in=domestic_violence_iucr_codes)
-    stalking_iucr_query = Q(iucr_code__in=stalking_iucr_codes)
-    violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
-    drug_iucr_query = Q(iucr_code__in=drug_iucr_codes)
-
-    violent_iucr_query = (homicide_iucr_query | sexual_assault_iucr_query |
-        robbery_iucr_query | agg_battery_iucr_query |
-        agg_assault_iucr_query)
-
-    violent_nonindex_iucr_query = (homicide_nonindex_iucr_query |
-            agg_assault_nonindex_iucr_query |
-            agg_battery_nonindex_iucr_query)
-
-    property_iucr_query = (burglary_iucr_query | theft_iucr_query |
-            motor_vehicle_theft_iucr_query | arson_iucr_query)
-
-    crimes_affecting_women_iucr_query = (sexual_assault_iucr_query |
-        domestic_violence_iucr_query |
-        violating_order_protection_iucr_query)
-    
     # TODO: Add queries based on charge description as workaround or supplement
     # to statutes that couldn't be coded to IUCR codes
 
@@ -380,9 +287,9 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Agg Battery / Agg Assault (as a single category for UCR)
 
         """
-        qs = self.filter(self.violent_iucr_query)
+        qs = self.filter(violent_iucr_query)
         # Exclude non-index crimes
-        qs = qs.exclude(self.violent_nonindex_iucr_query)
+        qs = qs.exclude(violent_nonindex_iucr_query)
         return qs
 
     def property_index_crimes(self):
@@ -396,8 +303,8 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Motor Vehicle Theft
         * Arson
         """
-        qs = self.filter(self.property_iucr_query)
-        qs = qs.exclude(self.arson_nonindex_iucr_query)
+        qs = self.filter(property_iucr_query)
+        qs = qs.exclude(arson_nonindex_iucr_query)
         return qs
 
     def drug_crimes(self):
@@ -421,17 +328,112 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Domestic Violence
         * Stalking / Violation of Order of Protection:
         """
-        return self.filter(self.crimes_affecting_women_iucr_query)
+        return self.filter(crimes_affecting_women_iucr_query)
 
     def homicides(self):
-        return self.filter(self.homicide_iucr_query |
-            self.homicide_nonindex_iucr_query)
+        return self.filter(homicide_iucr_query | homicide_nonindex_iucr_query)
 
     def other_crimes(self):
-        return self.exclude(self.violent_iucr_query |
-            self.property_iucr_query |
-            self.crimes_affecting_women_iucr_query |
+        return self.exclude(violent_iucr_query |
+            property_iucr_query |
+            crimes_affecting_women_iucr_query |
             poss_query | mfg_del_query)
+
+    def drug_by_class(self):
+        felony_classes = ['x', 1, 2, 3, 4]
+        misdemeanor_classes = ['a', 'b', 'c']
+
+        mfg_del = {}
+        poss = {}
+
+        mfg_del['label'] = "Manufacture or Delivery"
+        mfg_del.update(self._add_charge_class_counts(felony_classes,
+            'mfg_del_class_{}_felony', 'felony_{}', "Class {} Felony"))
+        mfg_del.update(self._add_charge_class_counts(misdemeanor_classes,
+            'mfg_del_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
+
+        mfg_del['unkwn_class'] = {}
+        mfg_del['unkwn_class']['value'] = self.mfg_del_unkwn_class().count()
+        mfg_del['unkwn_class']['label'] = "Unknown Class"
+
+        poss['label'] = "Possession"
+        poss['unkwn_class'] = {}
+        poss['unkwn_class']['value'] = self.poss_unkwn_class().count()
+        poss['unkwn_class']['label'] = "Unknown Class"
+
+        poss['no_class'] = {}
+        poss['no_class']['value'] = self.poss_no_class().count()
+        poss['no_class']['label'] = "No Class"
+        poss.update(self._add_charge_class_counts(felony_classes,
+            'poss_class_{}_felony', 'felony_{}', "Class {} Felony"))
+        poss.update(self._add_charge_class_counts(misdemeanor_classes,
+        'poss_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
+
+        return [mfg_del, poss]
+
+    def _add_charge_class_counts(self, offense_classes, method_tpl, key_tpl,
+            label_tpl):
+        result = {}
+        for charge_cls in offense_classes:
+            try:
+                method_name = method_tpl.format(charge_cls)
+                method = getattr(self, method_name)
+                key = key_tpl.format(charge_cls)
+                result[key] = {}
+                result[key]['value'] = method().count()
+                result[key]['label'] = label_tpl.format(str(charge_cls).upper())
+            except AttributeError:
+                pass
+
+        return result
+
+    def drug_by_drug_type(self):
+        drug_types = [
+            ('unkwn_drug', "Unknown Drug"),        
+            ('heroin', "Heroin"),
+            ('cocaine', "Cocaine"),
+            ('morphine', "Morphine"),
+            ('barbituric', "Barbituric Acid"),
+            ('amphetamine', "Amphetamine"),
+            ('lsd', "LSD"),
+            ('ecstasy', "Ecstasy"),
+            ('pcp', "PCP"),
+            ('ketamine', "Ketamine"),
+            ('steroids', "Steroids"),
+            ('meth', "Methamphetamine"),
+            ('cannabis', "Cannabis"),
+            ('sched_1_2', "Schedule 1 & 2"),
+            ('other_drug', "Other Drug"),
+            ('no_drug', "No Drug"),
+            #('lookalike', "Look-Alike Substance"),
+            #('script_form', "Script Form"),
+        ]
+
+        mfg_del = {
+            'label': "Manufacture or Delivery",
+        }
+        mfg_del.update(self._add_drug_type_counts(drug_types, 'mfg_del_{}'))
+
+        poss = {
+            'label': "Possession",
+        }
+        poss.update(self._add_drug_type_counts(drug_types, 'poss_{}'))
+
+        return [mfg_del, poss]
+
+    def _add_drug_type_counts(self, drug_types, method_tpl):
+        result = {}
+        for slug, label in drug_types:
+            try:
+                method_name = method_tpl.format(slug)
+                method = getattr(self, method_name)
+                result[slug] = {}
+                result[slug]['value'] = method().count()
+                result[slug]['label']= label
+            except AttributeError:
+                pass
+
+        return result
 
 
 class ConvictionGeoQuerySet(GeoQuerySet):
@@ -449,7 +451,6 @@ class ConvictionGeoQuerySet(GeoQuerySet):
             * num_convictions: Total number of convictions in the geography.
             * convictions_per_capita: Population-adjusted count of all
                convictions.
-
 
         """
         this_table = self.model._meta.db_table
@@ -490,11 +491,22 @@ class ConvictionGeoQuerySet(GeoQuerySet):
             'AND {conviction_table}.iucr_category = "Homicide"'
         ).format(conviction_table=conviction_table,
             matches_this_id=matches_this_id_where_sql)
+        # BOOKMARK
+        codes = ['"{}"'.format(c) for c in crimes_affecting_women_iucr_codes]
+        affecting_women_iucr_codes_str = ", ".join(codes)
+        num_affecting_women_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_code IN ({affecting_women_iucr_codes})'
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql,
+            affecting_women_iucr_codes=affecting_women_iucr_codes_str)
 
         annotated_qs = annotated_qs.extra(select={
             'num_convictions': num_convictions_sql,
             'convictions_per_capita': convictions_per_capita_sql,
             'num_homicides': num_homicides_sql,
+            'num_affecting_women': num_affecting_women_sql,
         })
 
         return annotated_qs 
