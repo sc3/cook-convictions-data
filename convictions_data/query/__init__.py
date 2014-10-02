@@ -501,12 +501,22 @@ class ConvictionGeoQuerySet(GeoQuerySet):
         ).format(conviction_table=conviction_table,
             matches_this_id=matches_this_id_where_sql,
             affecting_women_iucr_codes=affecting_women_iucr_codes_str)
+        affecting_women_per_capita_sql = ('SELECT CAST(COUNT({conviction_table}.id) AS FLOAT) / '
+            '"{this_table}"."total_population" '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_code IN ({affecting_women_iucr_codes})'
+        ).format(conviction_table=conviction_table,
+            this_table=this_table,
+            matches_this_id=matches_this_id_where_sql,
+            affecting_women_iucr_codes=affecting_women_iucr_codes_str)
 
         annotated_qs = annotated_qs.extra(select={
             'num_convictions': num_convictions_sql,
             'convictions_per_capita': convictions_per_capita_sql,
             'num_homicides': num_homicides_sql,
             'num_affecting_women': num_affecting_women_sql,
+            'affecting_women_per_capita': affecting_women_per_capita_sql,
         })
 
         return annotated_qs 
