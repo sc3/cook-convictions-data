@@ -97,6 +97,13 @@ Extract Chicago's border from a shapefile
 
     ./manage.py chicago_geojson_from_shp data/tl_2010_17_place10/tl_2010_17_place10.shp > chicago.json 
 
+Export convictions by age bucket
+--------------------------------
+
+::
+
+   ./manage.py export_age_json > convictions_by_age.json
+
 
 Manual Processes
 ================
