@@ -137,7 +137,7 @@ mfg_del_att_cocaine_gt_900_g_query = Q(final_statute__in=("720-5\8-4(401-A-2-D)"
 
 # Class 1 Felony, >= 200g Amphetamine
 # ILCS 720-570/401(a)(6)
-mfg_del_amph_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(6\)')
+mfg_del_amphetamine_gt_200_g_query = Q(final_statute__iregex=r'720-570/401\(a\)\(6\)')
 
 # Class X Felony, >=15g, < 100g or >= 15, < 200 objects Ecstasy
 # ILCS 720-570/401(a)(7.5)(A)
@@ -220,8 +220,12 @@ mfg_del_att_cntft_sub_query = Q(final_statute__iregex=r'38-8-4[-\(]1403\s{0,1}[-
 # ILCS 720-570/401(d)
 # Use exact values here so we don't accidentally capture the attempted or
 # conspiracy charges (see below)
-mfg_del_class_2_other_amt_query = Q(final_statute__in=('720-570/401(D)',
-    '720-570/401(D)(I)', '720-570/401-D'))
+mfg_del_class_2_other_amt_query = Q(final_statute__in=(
+    '720-570/401(d)',
+    '720-570/401(d)(i)',
+    '720-570/401(D)',
+    '720-570/401(D)(I)',
+    '720-570/401-D'))
 
 # Attempted Class 2 Felony
 # Since these are attempted, they get downgraded to a Class 3 Felony
@@ -436,7 +440,7 @@ mfg_del_class_1_felony_query = (
     mfg_del_pcp_10_30_g_query |
     mfg_del_sched_1_2_50_200_g_query |
     mfg_del_cntft_sub_query |
-    mfg_del_amph_gt_200_g_query |
+    mfg_del_amphetamine_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
     mfg_del_cannabis_2000_5000_g_query |
@@ -555,7 +559,7 @@ mfg_del_sched_1_2_query = (
     mfg_del_sched_1_2_50_200_g_query
 )
 
-mfg_del_amph_query = mfg_del_amph_gt_200_g_query
+mfg_del_amphetamine_query = mfg_del_amphetamine_gt_200_g_query
 
 mfg_del_meth_query = (
     mfg_del_meth_5_15_g_query |
@@ -608,7 +612,7 @@ mfg_del_query = (
     mfg_del_ecstasy_5_15_g_query |
     mfg_del_pcp_10_30_g_query |
     mfg_del_cntft_sub_query |
-    mfg_del_amph_gt_200_g_query |
+    mfg_del_amphetamine_gt_200_g_query |
     mfg_del_meth_5_15_g_query |
     mfg_del_meth_lt_5g_agg_query |
     mfg_del_cannabis_2000_5000_g_query |
