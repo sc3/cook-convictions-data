@@ -403,8 +403,12 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
             ('meth', "Methamphetamine"),
             ('cannabis', "Cannabis"),
             ('sched_1_2', "Schedule 1 & 2"),
-            ('other_drug', "Other Drug"),
-            ('no_drug', "No Drug"),
+            ('other_drug', "Other or Unspecified Drug"),
+            # Tracy says that drug charges that don't specify a certain
+            # type of drug but are tacked on because the drug is dealt to
+            # a minor or near a school or public housing are called
+            # "enhancements"
+            ('no_drug', "Enhancement"),
             #('lookalike', "Look-Alike Substance"),
             #('script_form', "Script Form"),
         ]
