@@ -9,6 +9,7 @@ from django.db.models.query import QuerySet
 
 from djgeojson.serializers import Serializer as GeoJSONSerializer
 
+from convictions_data.address import AddressAnonymizer
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.signals import (pre_geocode_page, post_geocode_page)
 
@@ -32,6 +33,46 @@ The date that our data begins.
 
 class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
+
+    EXPORT_FIELDS = [
+        'case_number',
+        'sequence_number',
+        'st_address',
+        'city',
+        'state',
+        'zipcode',
+        'arrest_date',
+        'initial_date',
+        'sex',
+        'statute',
+        'chrgdesc',
+        'chrgtype',
+        'chrgtype2',
+        'chrgclass',
+        'chrgdisp',
+        'chrgdispdate',
+        'ammndchargstatute',
+        'ammndchrgdescr',
+        'ammndchrgtype',
+        'ammndchrgclass',
+        'minsent_years',
+        'minsent_months',
+        'minsent_days',
+        'minsent_life',
+        'minsent_death',
+        'maxsent_years',
+        'maxsent_months',
+        'maxsent_days',
+        'maxsent_life',
+        'maxsent_death',
+        'amtoffine',
+    ]
+    """
+    Fields to include in a CSV export of these records
+    
+    In particular, we exclude personally identifying information like
+    ``ctlbkngno``, ``fgrprntno`` and ``dob``.
+    """
 
     def geocode(self, batch_size=100, timeout=1):
         geocoder = BatchOpenMapQuest(
@@ -263,6 +304,13 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
             i += 1
 
         return convictions
+
+    def anonymized_values(self):
+        vals = self.values(*self.EXPORT_FIELDS)
+        anonymizer = AddressAnonymizer()
+        for d in vals:
+            d['st_address'] = anonymizer.anonymize(d['st_address'])
+            yield d
 
 
 class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):

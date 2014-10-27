@@ -194,6 +194,7 @@ class Disposition(models.Model):
     # Use a custom manager to add geocoding methods
     objects = DispositionManager()
 
+
     def __init__(self, *args, **kwargs):
         super(Disposition, self).__init__(*args, **kwargs)
         if self.pk is None:

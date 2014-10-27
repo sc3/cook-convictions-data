@@ -34,6 +34,13 @@ class DispositionManager(models.Manager):
     def in_analysis(self):
         return self.get_query_set().in_analysis()
 
+    def anonymized_values(self):
+        return self.get_query_set().anonymized_values()
+
+    @property
+    def EXPORT_FIELDS(self):
+        return self.get_query_set().EXPORT_FIELDS
+
 
 class ConvictionGeoManager(geo_models.GeoManager):
     def get_queryset(self):
