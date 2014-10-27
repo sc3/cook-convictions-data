@@ -11,5 +11,7 @@ class Command(BaseCommand):
         writer = csv.DictWriter(self.stdout,
             fieldnames=Disposition.objects.EXPORT_FIELDS)
 
+        writer.writeheader()
+
         for disp in Disposition.objects.anonymized_values():
             writer.writerow(disp)
