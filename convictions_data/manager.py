@@ -1,7 +1,8 @@
 from django.contrib.gis.db import models as geo_models
 from django.db import models
 
-from convictions_data.query import CommunityAreaQuerySet, DispositionQuerySet
+from convictions_data.query import (CensusPlaceQueryset, ConvictionGeoQuerySet,
+    DispositionQuerySet)
 
 class DispositionManager(models.Manager):
     """Custom manager that uses DispositionQuerySet"""
@@ -33,18 +34,30 @@ class DispositionManager(models.Manager):
     def in_analysis(self):
         return self.get_query_set().in_analysis()
 
+    def anonymized_values(self):
+        return self.get_query_set().anonymized_values()
 
-class CommunityAreaManager(geo_models.GeoManager):
+    @property
+    def EXPORT_FIELDS(self):
+        return self.get_query_set().EXPORT_FIELDS
+
+
+class ConvictionGeoManager(geo_models.GeoManager):
     def get_queryset(self):
-        return CommunityAreaQuerySet(self.model, using=self._db)
+        return ConvictionGeoQuerySet(self.model, using=self._db)
 
+    def geojson(self, simplify=0.0):
+        return self.get_queryset().geojson(simplify=simplify)
+
+    def convictions_per_capita(self):
+        return self.get_queryset().convictions_per_capita()
+
+
+class CommunityAreaManager(ConvictionGeoManager):
     def aggregate_census_fields(self):
         for ca in self.get_query_set():
             ca.aggregate_census_fields()
             ca.save()
-
-    def geojson(self, simplify=0.0):
-        return self.get_queryset().geojson(simplify=simplify)
 
 
 class CensusTractManager(geo_models.GeoManager):
@@ -53,3 +66,11 @@ class CensusTractManager(geo_models.GeoManager):
             ca = self.model.get_community_area_model().objects.get(number=tract.community_area_number)
             tract.community_area = ca
             tract.save()
+
+
+class CensusPlaceManager(ConvictionGeoManager):
+    def get_queryset(self):
+        return CensusPlaceQueryset(self.model, using=self._db)
+
+    def chicago_suburbs(self):
+        return self.get_queryset().chicago_suburbs()

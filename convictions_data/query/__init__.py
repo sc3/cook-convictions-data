@@ -4,16 +4,24 @@ import logging
 from django.conf import settings
 from django.contrib.gis.db.models.query import GeoQuerySet
 from django.core.paginator import Paginator
-from django.db.models import Q, Min
+from django.db.models import Count, Min, Q, Sum
 from django.db.models.query import QuerySet
 
 from djgeojson.serializers import Serializer as GeoJSONSerializer
 
+from convictions_data.address import AddressAnonymizer
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.signals import (pre_geocode_page, post_geocode_page)
 
-from convictions_data.query.drugs import DrugQuerySetMixin
 from convictions_data.query.age import AgeQuerySetMixin
+from convictions_data.query.drugs import (DrugQuerySetMixin, mfg_del_query,
+    poss_query)
+from convictions_data.query.iucr import (
+    arson_nonindex_iucr_query,
+    crimes_affecting_women_iucr_codes, crimes_affecting_women_iucr_query,
+    homicide_iucr_query, homicide_nonindex_iucr_query,
+    property_iucr_query,
+    violent_iucr_query, violent_nonindex_iucr_query)
 from convictions_data.query.sex import SexQuerySetMixin
 
 logger = logging.getLogger(__name__)
@@ -25,6 +33,46 @@ The date that our data begins.
 
 class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):
     """Custom QuerySet that adds bulk geocoding capabilities"""
+
+    EXPORT_FIELDS = [
+        'case_number',
+        'sequence_number',
+        'st_address',
+        'city',
+        'state',
+        'zipcode',
+        'arrest_date',
+        'initial_date',
+        'sex',
+        'statute',
+        'chrgdesc',
+        'chrgtype',
+        'chrgtype2',
+        'chrgclass',
+        'chrgdisp',
+        'chrgdispdate',
+        'ammndchargstatute',
+        'ammndchrgdescr',
+        'ammndchrgtype',
+        'ammndchrgclass',
+        'minsent_years',
+        'minsent_months',
+        'minsent_days',
+        'minsent_life',
+        'minsent_death',
+        'maxsent_years',
+        'maxsent_months',
+        'maxsent_days',
+        'maxsent_life',
+        'maxsent_death',
+        'amtoffine',
+    ]
+    """
+    Fields to include in a CSV export of these records
+
+    In particular, we exclude personally identifying information like
+    ``ctlbkngno``, ``fgrprntno`` and ``dob``.
+    """
 
     def geocode(self, batch_size=100, timeout=1):
         geocoder = BatchOpenMapQuest(
@@ -105,11 +153,11 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
 
         This produces a SQL query similar to:
 
-        SELECT * 
-        FROM convictions_data_disposition 
+        SELECT *
+        FROM convictions_data_disposition
         WHERE EXISTS(SELECT case_number
             FROM convictions_data_disposition d2
-            WHERE d2.initial_date >= '2005-01-01' 
+            WHERE d2.initial_date >= '2005-01-01'
             AND d2.chrgdispdate > '2005-01-01'
             AND d2.case_number = "convictions_data_disposition"."case_number"
             GROUP BY case_number
@@ -126,11 +174,12 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         extra_where = extra_where.format(start_date, start_date)
         return self.extra(where=[extra_where])
 
-    CONVICTION_IMPORT_FIELDS = [ 
+    CONVICTION_IMPORT_FIELDS = [
         'case_number',
         'chrgdispdate',
         'city',
         'community_area',
+        'place',
         'county',
         'ctlbkngno',
         'chrgdisp',
@@ -159,8 +208,9 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         # Counter of number of dispositions we've processed, for logging
         i = 1
 
-        # Build a cache of Community areas
-        community_area_cache = self.model.get_community_area_cache() 
+        # Build a cache of Community areas and places
+        community_area_cache = self.model.get_community_area_cache()
+        place_cache = self.model.get_place_cache()
 
         # Get all dispositions from the first court date for a case
         # We use values so we can pass the dictionary as keyword arguments
@@ -200,16 +250,20 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
             if disp['community_area'] is not None:
                 # Convert community area ids to community area objects
                 disp['community_area'] = community_area_cache[disp['community_area']]
-               
+
+            if disp['place'] is not None:
+                # Convert place ids to community area objects
+                disp['place'] = place_cache[disp['place']]
+
             statute_disposition = (disp['final_statute'], disp['chrgdisp'])
-            if (disp['final_statute'] not in statute_seen or 
+            if (disp['final_statute'] not in statute_seen or
                 statute_disposition in disp_seen):
                 # There are two cases where we'll create a new conviction
                 # and update the conviction field on the disposition models:
                 #
                 # 1. If we haven't seen this statute in this case so far.
                 # 2. If we've seen this statute/disposition pairing before,
-                #    which we interpret as multiple counts of the same 
+                #    which we interpret as multiple counts of the same
                 #    charge.
 
                 if conviction is not None:
@@ -229,10 +283,10 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
                 # faster, but the id fields of the created models aren't
                 # populated, so we can't update the relationship on the
                 # disposition models.
-                # 
+                #
                 # See https://code.djangoproject.com/ticket/19527
 
-                # Remove some keys from our disposition dictionary so we can 
+                # Remove some keys from our disposition dictionary so we can
                 # just use the rest of the values to pass to the constructor
                 # for the Conviction model
                 del disp['id']
@@ -252,6 +306,13 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
 
         return convictions
 
+    def anonymized_values(self):
+        vals = self.values(*self.EXPORT_FIELDS)
+        anonymizer = AddressAnonymizer()
+        for d in vals:
+            d['st_address'] = anonymizer.anonymize(d['st_address'])
+            yield d
+
 
 class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):
     """
@@ -260,91 +321,6 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
     These categories were selected by Tracy.
 
     """
-
-    # Categories of crimes, from IUCR codes
-    #
-    # These are based on CPD IUCR Codes on the City’s website:  
-    # CPD IUCR Codes on the City’s website:  
-    # https://data.cityofchicago.org/Public-Safety/Chicago-Police-Department-Illinois-Uniform-Crime-R/c7ck-438e
-
-    homicide_iucr_codes = ('0110', '0130', '0141', '0142')
-    homicide_nonindex_iucr_codes = ('0141', '0142')
-
-    sexual_assault_iucr_codes = ('0261', '0263', '0264', '0265',
-        '0266', '0271', '0272', '0273', '0274', '0275', '0281', '0291')
-
-    robbery_iucr_codes = ('0312', '0313', '0320', '0325', '0326',
-        '0330', '0331', '0334', '0337', '0340', '031A', '031B', '033A',
-        '033B')
-
-    agg_assault_iucr_codes = ('0520', '0530', '0550', '0551', '0552',
-        '0553', '0554', '0555', '0556', '0557', '0558', '051A', '051B')
-    agg_assault_nonindex_iucr_codes = ('0554',)
-    # The following are types of assault but don't seem to be aggrevated:
-    # 0545: "PRO EMP HANDS NO/MIN INJURY"
-    # 0560: "SIMPLE" 
-    non_agg_assault_iucr_codes = ('0545', '0560')
-
-    agg_battery_iucr_codes = ('0420', '0430', '0440', '0450', '0451', '0452',
-        '0453', '0454', '0461', '0462', '0479', '0480', '0481', '0482', '0483',
-        '0485', '0487', '0488', '0489', '0495', '0496', '0497', '0498',
-        '041A', '041B')
-    agg_battery_nonindex_iucr_codes = ('0440', '0454', '0487')
-    non_agg_battery_iucr_codes = ('0460', '0475', '0484', '0486')
-
-    burglary_iucr_codes = ('0610', '0620', '0630', '0650')
-
-    theft_iucr_codes = ('0810', '0820', '0840', '0841', '0842', '0843', '0850',
-        '0860', '0865', '0870', '0880', '0890', '0895')
-
-    motor_vehicle_theft_iucr_codes = ('0910', '0915', '0917', '0918', '0920',
-        '0925', '0927', '0928', '0930', '0935', '0937', '0938')
-
-    arson_iucr_codes = ('1010', '1020', '1025', '1030', '1035', '1090')
-    arson_nonindex_iucr_codes = ('1030', '1035')
-
-    # These aren't part of a category as defined as CPD.  We're grouping them
-    # ourselves.
-    # As such the battery charges get counted in the Agg battery / agg assault
-    # category and also get counted in the domestic violence category for the
-    # purposes of our project.  We will not displaying these numbers together so
-    # it should not be a problem.
-    domestic_violence_iucr_codes = ('0486', '0488', '0489', '0496', '0497',
-        '0498')
-
-    stalking_iucr_codes = ('0580', '0581', '0583')
-
-    violating_order_protection_iucr_codes = ('4387')
-
-    drug_iucr_codes = ('1811', '1812', '1821', '1822', '1840', '1850', '1860',
-        '2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017', '2018',
-        '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027',
-        '2028', '2029', '2030', '2031', '2032', '2040', '2050', '2060', '2070',
-        '2080', '2090', '2091', '2092', '2093', '2094', '2095', '2110', '2111',
-        '2120', '2160', '2170')
-
-    # Q objects that will be used in the call to filter()
-
-    homicide_iucr_query = Q(iucr_code__in=homicide_iucr_codes)
-    homicide_nonindex_iucr_query = Q(iucr_code__in=homicide_nonindex_iucr_codes)
-    sexual_assault_iucr_query = Q(iucr_code__in=sexual_assault_iucr_codes)
-    robbery_iucr_query = Q(iucr_code__in=robbery_iucr_codes)
-    agg_assault_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
-    agg_assault_nonindex_iucr_query = Q(iucr_code__in=agg_assault_iucr_codes)
-    non_agg_assault_iucr_query = Q(iucr_code__in=non_agg_assault_iucr_codes) 
-    agg_battery_iucr_query = Q(iucr_code__in=agg_battery_iucr_codes)
-    agg_battery_nonindex_iucr_query = Q(iucr_code__in=agg_battery_nonindex_iucr_codes)
-    burglary_iucr_query = Q(iucr_code__in=burglary_iucr_codes)
-    theft_iucr_query = Q(iucr_code__in=theft_iucr_codes)
-    motor_vehicle_theft_iucr_query = Q(iucr_code__in=motor_vehicle_theft_iucr_codes)
-    arson_iucr_query = Q(iucr_code__in=arson_iucr_codes)
-    arson_nonindex_iucr_query = Q(iucr_code__in=arson_nonindex_iucr_codes)
-    domestic_violence_iucr_query = Q(iucr_code__in=domestic_violence_iucr_codes)
-    stalking_iucr_query = Q(iucr_code__in=stalking_iucr_codes)
-    violating_order_protection_iucr_query = Q(iucr_code__in=violating_order_protection_iucr_codes)
-    drug_iucr_query = Q(iucr_code__in=drug_iucr_codes)
-
-    
     # TODO: Add queries based on charge description as workaround or supplement
     # to statutes that couldn't be coded to IUCR codes
 
@@ -355,18 +331,14 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         Violent index crimes are:
 
         * Homicide
-        * Sexual Assault 
-        * Robbery 
+        * Sexual Assault
+        * Robbery
         * Agg Battery / Agg Assault (as a single category for UCR)
 
         """
-        qs = self.filter(self.homicide_iucr_query | self.sexual_assault_iucr_query |
-            self.robbery_iucr_query | self.agg_battery_iucr_query |
-            self.agg_assault_iucr_query)
+        qs = self.filter(violent_iucr_query)
         # Exclude non-index crimes
-        qs = qs.exclude(self.homicide_nonindex_iucr_query |
-            self.agg_assault_nonindex_iucr_query |
-            self.agg_battery_nonindex_iucr_query)
+        qs = qs.exclude(violent_nonindex_iucr_query)
         return qs
 
     def property_index_crimes(self):
@@ -375,21 +347,24 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
 
         Property index crimes are:
 
-        * Burglary 
+        * Burglary
         * Theft
         * Motor Vehicle Theft
         * Arson
         """
-        qs = self.filter(self.burglary_iucr_query | self.theft_iucr_query |
-            self.motor_vehicle_theft_iucr_query | self.arson_iucr_query)
-        qs = qs.exclude(self.arson_nonindex_iucr_query)
+        qs = self.filter(property_iucr_query)
+        qs = qs.exclude(arson_nonindex_iucr_query)
         return qs
 
     def drug_crimes(self):
         """
         Filter queryset to convictions for drug crimes.
         """
-        qs = self.filter(self.drug_iucr_query)
+        # The IUCR query misses a lot of values right now, probably because of
+        # annoying mangled statutes that combine the statute for the crime and
+        # the blanket statute for attempted crimes
+        #qs = self.filter(self.drug_iucr_query)
+        qs = self.filter(poss_query | mfg_del_query)
         return qs
 
     def crimes_affecting_women(self):
@@ -402,25 +377,119 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Domestic Violence
         * Stalking / Violation of Order of Protection:
         """
-        return self.filter(self.sexual_assault_iucr_query |
-            self.domestic_violence_iucr_query |
-            self.violating_order_protection_iucr_query)
+        return self.filter(crimes_affecting_women_iucr_query)
 
     def homicides(self):
-        return self.filter(self.homicide_iucr_query |
-            self.homicide_nonindex_iucr_query)
+        return self.filter(homicide_iucr_query | homicide_nonindex_iucr_query)
+
+    def other_crimes(self):
+        return self.exclude(violent_iucr_query |
+            property_iucr_query |
+            crimes_affecting_women_iucr_query |
+            poss_query | mfg_del_query)
+
+    def drug_by_class(self):
+        felony_classes = ['x', 1, 2, 3, 4]
+        misdemeanor_classes = ['a', 'b', 'c']
+
+        mfg_del = {}
+        poss = {}
+
+        mfg_del['label'] = "Manufacture or Delivery"
+        mfg_del.update(self._add_charge_class_counts(felony_classes,
+            'mfg_del_class_{}_felony', 'felony_{}', "Class {} Felony"))
+        mfg_del.update(self._add_charge_class_counts(misdemeanor_classes,
+            'mfg_del_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
+
+        mfg_del['unkwn_class'] = {}
+        mfg_del['unkwn_class']['value'] = self.mfg_del_unkwn_class().count()
+        mfg_del['unkwn_class']['label'] = "Unknown Class"
+
+        poss['label'] = "Possession"
+        poss['unkwn_class'] = {}
+        poss['unkwn_class']['value'] = self.poss_unkwn_class().count()
+        poss['unkwn_class']['label'] = "Unknown Class"
+
+        poss['no_class'] = {}
+        poss['no_class']['value'] = self.poss_no_class().count()
+        poss['no_class']['label'] = "No Class"
+        poss.update(self._add_charge_class_counts(felony_classes,
+            'poss_class_{}_felony', 'felony_{}', "Class {} Felony"))
+        poss.update(self._add_charge_class_counts(misdemeanor_classes,
+        'poss_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
+
+        return [mfg_del, poss]
+
+    def _add_charge_class_counts(self, offense_classes, method_tpl, key_tpl,
+            label_tpl):
+        result = {}
+        for charge_cls in offense_classes:
+            try:
+                method_name = method_tpl.format(charge_cls)
+                method = getattr(self, method_name)
+                key = key_tpl.format(charge_cls)
+                result[key] = {}
+                result[key]['value'] = method().count()
+                result[key]['label'] = label_tpl.format(str(charge_cls).upper())
+            except AttributeError:
+                pass
+
+        return result
+
+    def drug_by_drug_type(self):
+        drug_types = [
+            ('unkwn_drug', "Unknown Drug"),
+            ('heroin', "Heroin"),
+            ('cocaine', "Cocaine"),
+            ('morphine', "Morphine"),
+            ('barbituric', "Barbituric Acid"),
+            ('amphetamine', "Amphetamine"),
+            ('lsd', "LSD"),
+            ('ecstasy', "Ecstasy"),
+            ('pcp', "PCP"),
+            ('ketamine', "Ketamine"),
+            ('steroids', "Steroids"),
+            ('meth', "Methamphetamine"),
+            ('cannabis', "Cannabis"),
+            ('sched_1_2', "Schedule 1 & 2"),
+            ('other_drug', "Other or Unspecified Drug"),
+            # Tracy says that drug charges that don't specify a certain
+            # type of drug but are tacked on because the drug is dealt to
+            # a minor or near a school or public housing are called
+            # "enhancements"
+            ('no_drug', "Enhancement"),
+            #('lookalike', "Look-Alike Substance"),
+            #('script_form', "Script Form"),
+        ]
+
+        mfg_del = {
+            'label': "Manufacture or Delivery",
+        }
+        mfg_del.update(self._add_drug_type_counts(drug_types, 'mfg_del_{}'))
+
+        poss = {
+            'label': "Possession",
+        }
+        poss.update(self._add_drug_type_counts(drug_types, 'poss_{}'))
+
+        return [mfg_del, poss]
+
+    def _add_drug_type_counts(self, drug_types, method_tpl):
+        result = {}
+        for slug, label in drug_types:
+            try:
+                method_name = method_tpl.format(slug)
+                method = getattr(self, method_name)
+                result[slug] = {}
+                result[slug]['value'] = method().count()
+                result[slug]['label']= label
+            except AttributeError:
+                pass
+
+        return result
 
 
-class CommunityAreaQuerySet(GeoQuerySet):
-    GEOJSON_FIELDS = [
-        'number',
-        'name',
-        'total_population',
-        'num_convictions',
-        'convictions_per_capita',
-        'num_homicides',
-        'boundary',
-    ]
+class ConvictionGeoQuerySet(GeoQuerySet):
     """
     Fields included in GeoJSON export
     """
@@ -436,10 +505,10 @@ class CommunityAreaQuerySet(GeoQuerySet):
             * convictions_per_capita: Population-adjusted count of all
                convictions.
 
-
         """
         this_table = self.model._meta.db_table
         conviction_table = self.model.get_conviction_model()._meta.db_table
+        conviction_related_col = self.model.get_conviction_related_column_name()
         annotated_qs = self
         # Use the ``extra()`` QuerySet method to annotate this QuerySet
         # with aggregates based on a filtered, joined table.
@@ -448,8 +517,9 @@ class CommunityAreaQuerySet(GeoQuerySet):
 
         # First, define some SQL strings to make this stuff a little easier
         # to read.
-        matches_this_id_where_sql = ('{conviction_table}.community_area_id = '
-            '{this_table}.id').format(conviction_table=conviction_table, this_table=this_table)
+        matches_this_id_where_sql = ('{conviction_table}.{related_col} = '
+            '{this_table}.id').format(conviction_table=conviction_table,
+                this_table=this_table, related_col=conviction_related_col)
 
         # It seems like we could just do the following query with the Count()
         # aggregator, but the ORM adds the extra value from the select in the
@@ -468,20 +538,41 @@ class CommunityAreaQuerySet(GeoQuerySet):
             'WHERE {matches_this_id} '
         ).format(conviction_table=conviction_table, this_table=this_table,
             matches_this_id=matches_this_id_where_sql)
-        num_homicides_sql = ('SELECT COUNT({conviction_table}.id) '
-            'FROM {conviction_table} '
-            'WHERE {matches_this_id} '
-            'AND {conviction_table}.iucr_category = "Homicide"'
+        num_homicides_sql = ("SELECT COUNT({conviction_table}.id) "
+            "FROM {conviction_table} "
+            "WHERE {matches_this_id} "
+            "AND {conviction_table}.iucr_category = 'Homicide'"
         ).format(conviction_table=conviction_table,
             matches_this_id=matches_this_id_where_sql)
+        # BOOKMARK
+        codes = ["'{}'".format(c) for c in crimes_affecting_women_iucr_codes]
+        affecting_women_iucr_codes_str = ", ".join(codes)
+        num_affecting_women_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_code IN ({affecting_women_iucr_codes})'
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql,
+            affecting_women_iucr_codes=affecting_women_iucr_codes_str)
+        affecting_women_per_capita_sql = ('SELECT CAST(COUNT({conviction_table}.id) AS FLOAT) / '
+            '"{this_table}"."total_population" '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.iucr_code IN ({affecting_women_iucr_codes})'
+        ).format(conviction_table=conviction_table,
+            this_table=this_table,
+            matches_this_id=matches_this_id_where_sql,
+            affecting_women_iucr_codes=affecting_women_iucr_codes_str)
 
         annotated_qs = annotated_qs.extra(select={
             'num_convictions': num_convictions_sql,
             'convictions_per_capita': convictions_per_capita_sql,
             'num_homicides': num_homicides_sql,
+            'num_affecting_women': num_affecting_women_sql,
+            'affecting_women_per_capita': affecting_women_per_capita_sql,
         })
 
-        return annotated_qs 
+        return annotated_qs
 
     def geojson(self, simplify=0.0):
         """
@@ -489,7 +580,7 @@ class CommunityAreaQuerySet(GeoQuerySet):
 
         Args:
             simplify (float): Tolerance value to use when simplifying the
-                geometry fields of the models. Default is 0.  
+                geometry fields of the models. Default is 0.
 
         Returns:
             GeoJSON string representing a FeatureCollection containing each
@@ -498,8 +589,19 @@ class CommunityAreaQuerySet(GeoQuerySet):
         """
         # Use a ValuesQuerySet so pk, model name and other cruft aren't
         # included in the serialized output.
-        vqs = self.with_conviction_annotations().values(*self.GEOJSON_FIELDS)
+        vqs = self.with_conviction_annotations().values(*self.model.GEOJSON_FIELDS)
 
         return GeoJSONSerializer().serialize(vqs,
             simplify=simplify,
             geometry_field='boundary')
+
+    def convictions_per_capita(self):
+        """Calculate the aggregate convictions per capita for the entire QuerySet"""
+        total_convictions = self.aggregate(total_convictions=Count('conviction'))['total_convictions']
+        total_population = self.aggregate(total_population=Sum('total_population'))['total_population']
+
+        return float(total_convictions / total_population)
+
+class CensusPlaceQueryset(ConvictionGeoQuerySet):
+    def chicago_suburbs(self):
+        return self.filter(in_chicago_msa=True).exclude(name='Chicago')

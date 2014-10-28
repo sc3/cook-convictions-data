@@ -9,6 +9,9 @@ class CityStateSplitter(object):
     # Strings that represent states but are not official abbreviations
     MOCK_STATES = set(['ILL', 'I', 'MX'])
 
+    # HACK: These give a false positive when trying to match against state names
+    NOT_STATES = set(['MONEE'])
+
     @classmethod
     def split_city_state(cls, city_state):
         city_state = cls.PUNCTUATION_RE.sub(' ', city_state)
@@ -16,12 +19,20 @@ class CityStateSplitter(object):
 
         last = bits[-1]
 
-        if us.states.lookup(last) or last in cls.MOCK_STATES:
-            state = last 
+        state_lookup = us.states.lookup(last)
+        if last not in cls.NOT_STATES and (state_lookup or last in cls.MOCK_STATES):
+            if state_lookup:
+                state = state_lookup.abbr
+            else:
+                state = last
             city_bits = bits[:-1]
         elif len(last) >= 2 and (us.states.lookup(last[-2:]) or
                 last[-2:] in cls.MOCK_STATES):
-            state = last[-2:]
+            state_lookup = us.states.lookup(last[-2:])
+            if state_lookup:
+                state = state_lookup.abbr
+            else:
+                state = last[-2:]
             city_bits = bits[:-1] + [last[:-2]]
         else:
             state = ""

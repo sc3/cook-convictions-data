@@ -4,3 +4,6 @@ geopy>=0.99
 South>=0.8,<1.0
 django-geojson==2.6.0
 django-model-utils==2.2
+# Use my fork of usaddress for Python 3 support
+# This is an expedient hack and I'm sorry
+-e git+https://github.com/ghing/usaddress.git@python3_support#egg=usaddress

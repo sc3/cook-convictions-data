@@ -5,10 +5,11 @@ import unittest
 from django.conf import settings
 from django.test import SimpleTestCase, TestCase, TransactionTestCase
 
+from convictions_data import statute
+from convictions_data.address import AddressAnonymizer
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
 from convictions_data.geocoders import BatchOpenMapQuest
 from convictions_data.models import Disposition, RawDisposition
-from convictions_data import statute
 
 try:
     from django.test.runner import DiscoverRunner as BaseRunner
@@ -231,6 +232,8 @@ class CityStateSplitterTestCase(SimpleTestCase):
             ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
             ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
             ("MICHIGAN CTYIN", "MICHIGAN CTY", "IN"),
+            ("MONEE", "MONEE", ""),
+            ("DUBUQUE IOWA", "DUBUQUE", "IA"),
         ]
         for city_state, expected_city, expected_state in test_values:
             city, state = CityStateSplitter.split_city_state(city_state)
@@ -287,3 +290,22 @@ class StatuteTestCase(unittest.TestCase):
         for s, iucr_code in test_values:
             iucr_offense = statute.get_iucr(s)[0]
             self.assertEqual(iucr_offense.code, iucr_code)
+
+
+class AddressAnonymizerTestCase(SimpleTestCase):
+    def setUp(self):
+        self.anonymizer = AddressAnonymizer()
+
+    def test_anonymize(self):
+        # These address formats are from the data but I changed the street names
+        # to made up ones.
+        test_data = [
+            ('7719 1/2 N LINDA', '7700 N LINDA'),
+            ('1505 S KERNEY 1ST FL', '1500 S KERNEY'),
+            ('523 W 999TH ST 2ND FL', '500 W 999TH ST'),
+            ('5920 N HILL #220', '5900 N HILL'),
+        ]
+        
+        for address, expected in test_data:
+            anonymized = self.anonymizer.anonymize(address)
+            self.assertEqual(anonymized, expected)

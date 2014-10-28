@@ -14,12 +14,14 @@ from django.contrib.gis.geos import Point
 from model_utils.managers import PassThroughManager
 
 from convictions_data.cleaner import CityStateCleaner, CityStateSplitter
-from convictions_data.manager import (DispositionManager, CensusTractManager,
-    CommunityAreaManager)
+from convictions_data.manager import (CensusPlaceManager,
+    CensusTractManager, CommunityAreaManager, DispositionManager)
+
 from convictions_data.query import ConvictionQuerySet
-from convictions_data.statute import get_iucr
+from convictions_data.statute import (get_iucr, ILCSLookupError,
+        IUCRLookupError, StatuteFormatError)
 from convictions_data.signals import post_load_spatial_data
-    
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ ZIPCODE_RE = re.compile(r'^\d{5}$')
 
 class RawDisposition(models.Model):
     """Disposition record loaded verbatim from the raw CSV"""
-    # case_number is not unique 
+    # case_number is not unique
     case_number = models.CharField(max_length=MAX_LENGTH)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
     st_address = models.CharField(max_length=MAX_LENGTH)
@@ -122,7 +124,7 @@ class Disposition(models.Model):
     """Disposition record with cleaned/transformed data"""
     raw_disposition = models.ForeignKey(RawDisposition)
 
-    # ID Fields 
+    # ID Fields
     case_number = models.CharField(max_length=MAX_LENGTH, db_index=True)
     sequence_number = models.CharField(max_length=MAX_LENGTH)
     ctlbkngno = models.CharField(max_length=MAX_LENGTH)
@@ -179,18 +181,20 @@ class Disposition(models.Model):
         default="", db_index=True)
     iucr_code = models.CharField(max_length=4, default="", db_index=True)
     iucr_category = models.CharField(max_length=50, default="", db_index=True)
-    
+
     # Spatial fields
     lat = models.FloatField(null=True)
     lon = models.FloatField(null=True)
     community_area = models.ForeignKey('CommunityArea', null=True,
         on_delete=models.SET_NULL)
+    place = models.ForeignKey('CensusPlace', null=True, on_delete=models.SET_NULL)
 
     conviction = models.ForeignKey('Conviction', null=True,
         on_delete=models.SET_NULL)
 
     # Use a custom manager to add geocoding methods
     objects = DispositionManager()
+
 
     def __init__(self, *args, **kwargs):
         super(Disposition, self).__init__(*args, **kwargs)
@@ -253,14 +257,16 @@ class Disposition(models.Model):
                 if 'date' in field_name or field_name == 'dob':
                     val = None
 
-            setattr(self, field_name, val) 
-        
+            setattr(self, field_name, val)
+
         return self
 
     def _load_field_city_state(self, val):
         self.city, self.state = self._parse_city_state(val)
         if not self.state:
             self.state = self._detect_state(self.city)
+
+        assert len(self.state) <= 2, self._invalid_len_msg('state')
 
         return self
 
@@ -278,15 +284,23 @@ class Disposition(models.Model):
         if val:
             self.final_statute = val
 
-            offenses = get_iucr(val)
-            if len(offenses) == 1:
-                self.iucr_code = offenses[0].code
-                self.iucr_category = offenses[0].offense_category
-            else:
-                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
-                       
-        return self
+            try:
+                offenses = get_iucr(val)
+                if len(offenses) == 1:
+                    self.iucr_code = offenses[0].code
+                    self.iucr_category = offenses[0].offense_category
+                else:
+                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+            except IUCRLookupError as e:
+                logger.warn(e)
+            except ILCSLookupError as e:
+                logger.warn(e)
+            except AssertionError as e:
+                logger.warn(e)
+            except StatuteFormatError as e:
+                logger.warn(e)
 
+        return self
 
     def _load_field_chrgdesc(self, val):
         self.chrgdesc = val
@@ -296,14 +310,23 @@ class Disposition(models.Model):
 
     def _load_field_chrgtype(self, val):
         self.chrgtype = val
+        assert len(self.chrgtype) <= 1, self._invalid_len_msg('chrgtype')
         if val:
             self.final_chrgtype = val
+            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
+
+    def _invalid_len_msg(self, attr):
+        val = getattr(self, attr)
+        return ("Invalid length for {} '{}' when loading from RawResult with "
+            "pk {}".format(attr, val, self.raw_disposition.pk))
 
     def _load_field_chrgclass(self, val):
         self.chrgclass = val
+        assert len(self.chrgclass) <= 1, self._invalid_len_msg('chrgclass')
         if val:
             self.final_chrgclass = val
+            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def _load_field_ammndchargstatute(self, val):
@@ -312,12 +335,21 @@ class Disposition(models.Model):
         if val:
             self.final_statute = val
 
-            offenses = get_iucr(val)
-            if len(offenses) == 1:
-                self.iucr_code = offenses[0].code
-                self.iucr_category = offenses[0].offense_category
-            else:
-                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+            try:
+                offenses = get_iucr(val)
+                if len(offenses) == 1:
+                    self.iucr_code = offenses[0].code
+                    self.iucr_category = offenses[0].offense_category
+                else:
+                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+            except IUCRLookupError as e:
+                logger.warn(e)
+            except ILCSLookupError as e:
+                logger.warn(e)
+            except AssertionError as e:
+                logger.warn(e)
+            except StatuteFormatError as e:
+                logger.warn(e)
 
         return self
 
@@ -329,26 +361,35 @@ class Disposition(models.Model):
 
     def _load_field_ammndchrgtype(self, val):
         self.ammndchrgtype = val
+        assert len(self.ammndchrgtype) <= 1, self._invalid_len_msg('ammndchrgtype')
         if val:
             self.final_chrgtype = val
+            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
 
     def _load_field_ammndchrgclass(self, val):
         self.ammndchrgclass = val
+        assert len(self.ammndchrgclass) <= 1, self._invalid_len_msg('ammndchrgclass')
         if val:
             self.final_chrgclass = val
+            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def boundarize(self):
+        pnt = Point(self.lon, self.lat)
         try:
-            pnt = Point(self.lon, self.lat)
             self.community_area = CommunityArea.objects.get(boundary__contains=pnt)
             self.save()
             return self.community_area
         except CommunityArea.DoesNotExist:
-            return False
+            try:
+                self.place = CensusPlace.objects.get(boundary__contains=pnt)
+                self.save()
+                return self.place
+            except CensusPlace.DoesNotExist:
+                return False
 
-       
+
     @classmethod
     def _parse_city_state(cls, city_state):
         city, state = CityStateSplitter.split_city_state(city_state)
@@ -369,7 +410,7 @@ class Disposition(models.Model):
         # matches the name of a municipality in Cook County.  If it does,
         # set the state to IL.
         q = Q(municipality_name__iexact=city) | Q(agency_name__iexact=city)
-        
+
         if Municipality.objects.filter(q).count():
             return "IL"
 
@@ -446,7 +487,7 @@ class Disposition(models.Model):
     def _parse_sentence(cls, s):
         if s == "88888888":
             return None, None, None, True, False
-        
+
         if s == "99999999":
             return None, None, None, False, True
 
@@ -459,7 +500,7 @@ class Disposition(models.Model):
     @classmethod
     def _parse_amtoffine(cls, s):
         return cls._parse_int(s)
-    
+
     @classmethod
     def _parse_int(cls, s):
         if not s:
@@ -474,6 +515,14 @@ class Disposition(models.Model):
         except AttributeError:
             cls._community_area_cache = {ca.id: ca for ca in CommunityArea.objects.all()}
             return cls._community_area_cache
+
+    @classmethod
+    def get_place_cache(cls):
+        try:
+            return cls._place_cache
+        except AttributeError:
+            cls._place_cache = {ca.id: ca for ca in CensusPlace.objects.all()}
+            return cls._place_cache
 
     @classmethod
     def create_conviction(cls, **kwargs):
@@ -518,6 +567,9 @@ class Conviction(models.Model):
 
     community_area = models.ForeignKey('CommunityArea', null=True,
         on_delete=models.SET_NULL)
+    place = models.ForeignKey('CensusPlace', null=True,
+        on_delete=models.SET_NULL)
+
 
     objects = PassThroughManager.for_queryset_class(ConvictionQuerySet)()
 
@@ -541,7 +593,7 @@ class Municipality(geo_models.Model):
     shape_length = geo_models.FloatField()
 
     boundary = geo_models.MultiPolygonField()
-    
+
     objects = geo_models.GeoManager()
 
     FIELD_MAPPING = {
@@ -578,7 +630,24 @@ class CensusFieldsMixin(geo_models.Model):
         abstract = True
 
 
-class CommunityArea(CensusFieldsMixin, geo_models.Model):
+class ConvictionsAggregateMixin(object):
+    @classmethod
+    def get_conviction_model(cls):
+        return Conviction
+
+GEOJSON_FIELDS_BASE = [
+    'name',
+    'total_population',
+    'num_convictions',
+    'convictions_per_capita',
+    'num_homicides',
+    'num_affecting_women',
+    'affecting_women_per_capita',
+    'boundary',
+]
+
+
+class CommunityArea(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model):
     """
     Chicago Community Area
 
@@ -592,7 +661,7 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
 
     boundary = geo_models.MultiPolygonField()
 
-    objects = CommunityAreaManager() 
+    objects = CommunityAreaManager()
 
     FIELD_MAPPING = {
         'number': 'AREA_NUMBE',
@@ -601,6 +670,10 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
         'shape_len': 'SHAPE_LEN',
         'boundary': 'MULTIPOLYGON',
     }
+
+    GEOJSON_FIELDS = GEOJSON_FIELDS_BASE + [
+        'number',
+    ]
 
     def __str__(self):
         return self.name
@@ -622,14 +695,14 @@ class CommunityArea(CensusFieldsMixin, geo_models.Model):
                 moe = getattr(tract, moe_field)
                 aggregate_moe += moe**2
 
-        aggregate_moe = math.sqrt(aggregate_moe) 
+        aggregate_moe = math.sqrt(aggregate_moe)
         setattr(self, field, aggregate)
         setattr(self, moe_field, aggregate_moe)
         return aggregate, aggregate_moe
 
     @classmethod
-    def get_conviction_model(cls):
-        return Conviction
+    def get_conviction_related_column_name(cls):
+        return 'community_area_id'
 
 
 class CensusTract(CensusFieldsMixin, geo_models.Model):
@@ -637,7 +710,7 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
     Census Tract
 
     Wraps
-    https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik 
+    https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik
     """
     statefp10 = geo_models.CharField(max_length=2)
     countyfp10 = geo_models.CharField(max_length=3)
@@ -672,6 +745,68 @@ class CensusTract(CensusFieldsMixin, geo_models.Model):
     @classmethod
     def get_community_area_model(cls):
         return CommunityArea
+
+
+class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model):
+    """
+    Census Place
+
+    Wraps TIGER Shapefile http://www2.census.gov/geo/tiger/TIGER2010/PLACE/2010/tl_2010_17_place10.zip
+
+    """
+    # From ShapeFile
+    statefp10 = geo_models.CharField(max_length=2)
+    placefp10 = geo_models.CharField(max_length=5)
+    placens10 = geo_models.CharField(max_length=8)
+    geoid10 = geo_models.CharField(max_length=11, db_index=True)
+    name = geo_models.CharField(max_length=100, db_index=True)
+    namelsad10 = geo_models.CharField(max_length=100)
+    lsad10 = geo_models.CharField(max_length=2)
+    classfp10 = geo_models.CharField(max_length=2)
+    pcicbsa10 = geo_models.CharField(max_length=1)
+    pcinecta10 = geo_models.CharField(max_length=1)
+    mtfcc10 = geo_models.CharField(max_length=5)
+    funcstat10 = geo_models.CharField(max_length=1)
+    aland10 = geo_models.FloatField()
+    awater10 = geo_models.FloatField()
+    intptlat10 = geo_models.CharField(max_length=11)
+    intptlon10 = geo_models.CharField(max_length=12)
+
+    # Custom Fields
+    in_chicago_msa = geo_models.BooleanField(default=False,
+        help_text=("Is this place within one of the counties that is part "
+            "of Chicago's Metropolitan Statistical Area: Cook, DeKalb, "
+            "DuPage, Grundy, Kane, Kendall, McHenry, Will, Lake"))
+
+    # Spatial fields
+    boundary = geo_models.MultiPolygonField()
+
+    objects = CensusPlaceManager()
+
+    FIELD_MAPPING = {
+        'placefp10': 'PLACEFP10',
+        'placens10': 'PLACENS10',
+        'geoid10': 'GEOID10',
+        'name': 'NAME10',
+        'namelsad10': 'NAMELSAD10',
+        'lsad10': 'LSAD10',
+        'classfp10': 'CLASSFP10',
+        'pcicbsa10': 'PCICBSA10',
+        'pcinecta10': 'PCINECTA10',
+        'mtfcc10': 'MTFCC10',
+        'funcstat10': 'FUNCSTAT10',
+        'aland10': 'ALAND10',
+        'awater10': 'AWATER10',
+        'intptlat10': 'INTPTLAT10',
+        'intptlon10': 'INTPTLON10',
+        'boundary': 'MULTIPOLYGON',
+    }
+
+    GEOJSON_FIELDS = GEOJSON_FIELDS_BASE
+
+    @classmethod
+    def get_conviction_related_column_name(cls):
+        return 'place_id'
 
 
 def handle_post_load_spatial_data(sender, **kwargs):
