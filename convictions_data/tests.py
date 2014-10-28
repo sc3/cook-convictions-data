@@ -232,6 +232,8 @@ class CityStateSplitterTestCase(SimpleTestCase):
             ("EAST CHICAGOIN", "EAST CHICAGO", "IN"),
             ("BLOOMINGDALEIN", "BLOOMINGDALE", "IN"),
             ("MICHIGAN CTYIN", "MICHIGAN CTY", "IN"),
+            ("MONEE", "MONEE", ""),
+            ("DUBUQUE IOWA", "DUBUQUE", "IA"),
         ]
         for city_state, expected_city, expected_state in test_values:
             city, state = CityStateSplitter.split_city_state(city_state)
@@ -307,11 +309,3 @@ class AddressAnonymizerTestCase(SimpleTestCase):
         for address, expected in test_data:
             anonymized = self.anonymizer.anonymize(address)
             self.assertEqual(anonymized, expected)
-
-    def test_anonymize_address_number(self):
-        test_data = [
-            ('7719', '7700'),        
-            ('523', '500'),
-            ('100', '100'),
-            ('50', '0'),
-        ]

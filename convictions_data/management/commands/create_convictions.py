@@ -22,7 +22,6 @@ class Command(BaseCommand):
             Conviction.objects.all().delete()
             Disposition.objects.in_analysis().update(conviction=None)
 
-        # TODO: Update this once we clean the misaligned data
         qs = Disposition.objects.in_analysis().filter(chrgclass__regex=r'^[A-Z0-9]{0,1}$')
         
         with transaction.atomic():

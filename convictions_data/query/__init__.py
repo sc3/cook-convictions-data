@@ -69,7 +69,7 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
     ]
     """
     Fields to include in a CSV export of these records
-    
+
     In particular, we exclude personally identifying information like
     ``ctlbkngno``, ``fgrprntno`` and ``dob``.
     """
@@ -153,11 +153,11 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
 
         This produces a SQL query similar to:
 
-        SELECT * 
-        FROM convictions_data_disposition 
+        SELECT *
+        FROM convictions_data_disposition
         WHERE EXISTS(SELECT case_number
             FROM convictions_data_disposition d2
-            WHERE d2.initial_date >= '2005-01-01' 
+            WHERE d2.initial_date >= '2005-01-01'
             AND d2.chrgdispdate > '2005-01-01'
             AND d2.case_number = "convictions_data_disposition"."case_number"
             GROUP BY case_number
@@ -174,11 +174,12 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         extra_where = extra_where.format(start_date, start_date)
         return self.extra(where=[extra_where])
 
-    CONVICTION_IMPORT_FIELDS = [ 
+    CONVICTION_IMPORT_FIELDS = [
         'case_number',
         'chrgdispdate',
         'city',
         'community_area',
+        'place',
         'county',
         'ctlbkngno',
         'chrgdisp',
@@ -208,7 +209,7 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         i = 1
 
         # Build a cache of Community areas and places
-        community_area_cache = self.model.get_community_area_cache() 
+        community_area_cache = self.model.get_community_area_cache()
         place_cache = self.model.get_place_cache()
 
         # Get all dispositions from the first court date for a case
@@ -253,16 +254,16 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
             if disp['place'] is not None:
                 # Convert place ids to community area objects
                 disp['place'] = place_cache[disp['place']]
-               
+
             statute_disposition = (disp['final_statute'], disp['chrgdisp'])
-            if (disp['final_statute'] not in statute_seen or 
+            if (disp['final_statute'] not in statute_seen or
                 statute_disposition in disp_seen):
                 # There are two cases where we'll create a new conviction
                 # and update the conviction field on the disposition models:
                 #
                 # 1. If we haven't seen this statute in this case so far.
                 # 2. If we've seen this statute/disposition pairing before,
-                #    which we interpret as multiple counts of the same 
+                #    which we interpret as multiple counts of the same
                 #    charge.
 
                 if conviction is not None:
@@ -282,10 +283,10 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
                 # faster, but the id fields of the created models aren't
                 # populated, so we can't update the relationship on the
                 # disposition models.
-                # 
+                #
                 # See https://code.djangoproject.com/ticket/19527
 
-                # Remove some keys from our disposition dictionary so we can 
+                # Remove some keys from our disposition dictionary so we can
                 # just use the rest of the values to pass to the constructor
                 # for the Conviction model
                 del disp['id']
@@ -330,8 +331,8 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         Violent index crimes are:
 
         * Homicide
-        * Sexual Assault 
-        * Robbery 
+        * Sexual Assault
+        * Robbery
         * Agg Battery / Agg Assault (as a single category for UCR)
 
         """
@@ -346,7 +347,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
 
         Property index crimes are:
 
-        * Burglary 
+        * Burglary
         * Theft
         * Motor Vehicle Theft
         * Arson
@@ -437,7 +438,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
 
     def drug_by_drug_type(self):
         drug_types = [
-            ('unkwn_drug', "Unknown Drug"),        
+            ('unkwn_drug', "Unknown Drug"),
             ('heroin', "Heroin"),
             ('cocaine', "Cocaine"),
             ('morphine', "Morphine"),
@@ -537,14 +538,14 @@ class ConvictionGeoQuerySet(GeoQuerySet):
             'WHERE {matches_this_id} '
         ).format(conviction_table=conviction_table, this_table=this_table,
             matches_this_id=matches_this_id_where_sql)
-        num_homicides_sql = ('SELECT COUNT({conviction_table}.id) '
-            'FROM {conviction_table} '
-            'WHERE {matches_this_id} '
-            'AND {conviction_table}.iucr_category = "Homicide"'
+        num_homicides_sql = ("SELECT COUNT({conviction_table}.id) "
+            "FROM {conviction_table} "
+            "WHERE {matches_this_id} "
+            "AND {conviction_table}.iucr_category = 'Homicide'"
         ).format(conviction_table=conviction_table,
             matches_this_id=matches_this_id_where_sql)
         # BOOKMARK
-        codes = ['"{}"'.format(c) for c in crimes_affecting_women_iucr_codes]
+        codes = ["'{}'".format(c) for c in crimes_affecting_women_iucr_codes]
         affecting_women_iucr_codes_str = ", ".join(codes)
         num_affecting_women_sql = ('SELECT COUNT({conviction_table}.id) '
             'FROM {conviction_table} '
@@ -571,7 +572,7 @@ class ConvictionGeoQuerySet(GeoQuerySet):
             'affecting_women_per_capita': affecting_women_per_capita_sql,
         })
 
-        return annotated_qs 
+        return annotated_qs
 
     def geojson(self, simplify=0.0):
         """
@@ -579,7 +580,7 @@ class ConvictionGeoQuerySet(GeoQuerySet):
 
         Args:
             simplify (float): Tolerance value to use when simplifying the
-                geometry fields of the models. Default is 0.  
+                geometry fields of the models. Default is 0.
 
         Returns:
             GeoJSON string representing a FeatureCollection containing each
@@ -598,7 +599,7 @@ class ConvictionGeoQuerySet(GeoQuerySet):
         """Calculate the aggregate convictions per capita for the entire QuerySet"""
         total_convictions = self.aggregate(total_convictions=Count('conviction'))['total_convictions']
         total_population = self.aggregate(total_population=Sum('total_population'))['total_population']
-       
+
         return float(total_convictions / total_population)
 
 class CensusPlaceQueryset(ConvictionGeoQuerySet):
