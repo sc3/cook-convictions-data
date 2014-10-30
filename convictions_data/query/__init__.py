@@ -488,6 +488,17 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
 
         return result
 
+    def most_common_statutes(self, count=10):
+        """Get the most common statutes"""
+        statutes = self.values('final_statute').annotate(count=Count('id')).order_by('-count')[:count]
+
+        for statute in statutes:
+            chrgdescs = self.filter(final_statute=statute['final_statute']).values('final_chrgdesc').distinct()
+            statute['final_chrgdesc'] = [list(cd.values())[0]
+                    for cd in chrgdescs]
+
+        return statutes
+
 
 class ConvictionGeoQuerySet(GeoQuerySet):
     """
@@ -601,6 +612,7 @@ class ConvictionGeoQuerySet(GeoQuerySet):
         total_population = self.aggregate(total_population=Sum('total_population'))['total_population']
 
         return float(total_convictions / total_population)
+
 
 class CensusPlaceQueryset(ConvictionGeoQuerySet):
     def chicago_suburbs(self):

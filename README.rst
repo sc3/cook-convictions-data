@@ -162,6 +162,13 @@ Export Community Area and Census Place GeoJSON
 
     ./manage.py export_model_geojson CensusPlace > suburbs.json
 
+Export most common statute by community area
+--------------------------------------------
+
+::
+
+    ./manage.py most_common_statutes_by_geo > top_statutes_by_community_area.csv
+
 
 Extract Chicago's border from a shapefile
 -----------------------------------------

@@ -635,6 +635,11 @@ class ConvictionsAggregateMixin(object):
     def get_conviction_model(cls):
         return Conviction
 
+    def most_common_statutes(self, count=10):
+        filter_kwargs = {}
+        filter_kwargs[self.get_conviction_related_field_name()] = self
+        return self.get_conviction_model().objects.filter(**filter_kwargs).most_common_statutes(count)
+
 GEOJSON_FIELDS_BASE = [
     'name',
     'total_population',
@@ -703,6 +708,10 @@ class CommunityArea(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Mod
     @classmethod
     def get_conviction_related_column_name(cls):
         return 'community_area_id'
+
+    @classmethod
+    def get_conviction_related_field_name(cls):
+        return 'community_area'
 
 
 class CensusTract(CensusFieldsMixin, geo_models.Model):
@@ -807,6 +816,10 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
     @classmethod
     def get_conviction_related_column_name(cls):
         return 'place_id'
+
+    @classmethod
+    def get_conviction_related_field_name(cls):
+        return 'place'
 
 
 def handle_post_load_spatial_data(sender, **kwargs):
