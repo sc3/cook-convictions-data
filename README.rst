@@ -192,7 +192,7 @@ Export Disposition model records to CSV.  Anonymize the data by dropping persona
 
 ::
 
-    ./manage.py export_csv > dispositions.csv
+    ./manage.py export_public_data > dispositions.csv
 
 
 Manual Processes

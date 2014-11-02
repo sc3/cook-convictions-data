@@ -25,7 +25,7 @@ class Command(BaseCommand):
         if options['year']:
             assert options['year'] >= 2005 and options['year'] <= 2009
             filter_kwargs = self._get_year_filter_kwargs(options['year'])
-            qs = qs.filter(**filter_kwargs)
+            qs = qs.filter(**filter_kwargs).order_by('case_number')
 
         writer.writeheader()
 
