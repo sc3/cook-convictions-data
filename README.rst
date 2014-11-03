@@ -162,7 +162,15 @@ Export Community Area and Census Place GeoJSON
 
     ./manage.py export_model_geojson CensusPlace > suburbs.json
 
-Export most common statute by community area
+
+Export most common charges overall
+----------------------------------
+
+::
+
+    ./manage.py most_common_statutes > top_statutes.csv
+
+Export most common charges by community area
 --------------------------------------------
 
 ::
