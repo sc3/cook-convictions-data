@@ -19,7 +19,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         statute_fieldnames = ['statute_' + str(i) 
             for i in range(1, options['count'] + 1)]
-        fieldnames = ['community_area'] + statute_fieldnames 
+        fieldnames = ['community_area', 'number'] + statute_fieldnames 
         writer = csv.DictWriter(self.stdout,
             fieldnames=fieldnames)
 
@@ -28,8 +28,9 @@ class Command(BaseCommand):
         for ca in CommunityArea.objects.all():
             row = {
                 'community_area': ca.name,
+                'number': ca.number,
             }
             top_statutes = ca.most_common_statutes(options['count'])
             for i, statute in enumerate(top_statutes):
-                row['statute_' + str(i+1)] = statute['final_chrgdesc'][0]
+                row['statute_' + str(i+1)] = statute['chrgdesc']
             writer.writerow(row)

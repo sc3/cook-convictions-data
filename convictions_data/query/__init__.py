@@ -490,12 +490,16 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
 
     def most_common_statutes(self, count=10):
         """Get the most common statutes"""
-        statutes = self.values('final_statute').annotate(count=Count('id')).order_by('-count')[:count]
-
-        for statute in statutes:
-            chrgdescs = self.filter(final_statute=statute['final_statute']).values('final_chrgdesc').distinct()
-            statute['final_chrgdesc'] = [list(cd.values())[0]
-                    for cd in chrgdescs]
+        extra_select = {
+            'statute': "LOWER(final_statute)",
+        }
+        # We reassign to the same variable to avoid a long, multi-line
+        # assignment with lots of chained methods
+        qs = self.extra(select=extra_select)
+        qs = qs.values('statute')
+        qs = qs.annotate(count=Count('id'), chrgdesc=Min('final_chrgdesc'))
+        qs = qs.order_by('-count')
+        statutes = qs[:count]
 
         return statutes
 
