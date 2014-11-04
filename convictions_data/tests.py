@@ -1,7 +1,5 @@
-import csv
 import datetime
 from mock import patch
-import os.path
 import unittest
 
 from django.conf import settings
@@ -18,6 +16,10 @@ try:
 except ImportError:
     # Django < 1.6 fallback
     from django.test.simple import DjangoTestSuiteRunner as BaseRunner
+
+__test__ = {
+    'parse_subsection': statute.parse_subsection,        
+}
 
 # Database-less test runner from
 # http://www.caktusgroup.com/blog/2013/10/02/skipping-test-db-creation/ 
@@ -259,9 +261,106 @@ class CityStateCleanerTestCase(SimpleTestCase):
 
 
 class StatuteTestCase(unittest.TestCase):
+    def test_parse_ilcs_statute(self):
+        st = '720-570/401(c)(2)'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('720', 'chapter'),
+            ('570', 'act_prefix'),
+            ('401', 'section'),
+            ('c', 'subsection'),
+            ('2', 'subsection'),
+        ])
+
+        st = '720-5/16A-3(a)'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('720', 'chapter'),
+            ('5', 'act_prefix'),
+            ('16A-3', 'section'),
+            ('a', 'subsection'),
+        ])
+
+        st = '510-70/3.01'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('510', 'chapter'),
+            ('70', 'act_prefix'),
+            ('3.01', 'section')
+        ])
+
+        st = '15-335/14A(b)(5)'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('15', 'chapter'),
+            ('335', 'act_prefix'),
+            ('14A', 'section'),
+            ('b', 'subsection'),
+            ('5', 'subsection')
+        ])
+
+        st = '35-130/9c'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('35', 'chapter'),
+            ('130', 'act_prefix'),
+            ('9c', 'section')
+        ])
+
+        st = '720-5/18-2(a)(4)'
+        parsed = statute.parse_ilcs_statute(st)
+        self.assertEqual(parsed, [
+            ('720', 'chapter'),
+            ('5', 'act_prefix'),
+            ('18-2', 'section'),
+            ('a', 'subsection'),
+            ('4', 'subsection')
+        ])
+
+
+    def test_parse_ilrs_statute(self):
+        st = '38-12-14-B(1)'
+        parsed = statute.parse_ilrs_statute(st)
+        self.assertEqual(parsed, [
+            ('38', 'chapter'),
+            ('12-14', 'paragraph'),
+            ('B', 'subsection'),
+            ('1', 'subsection')
+        ])
+
+        st= '56.5-704-D'
+        parsed = statute.parse_ilrs_statute(st)
+        self.assertEqual(parsed, [
+            ('56.5', 'chapter'),
+            ('704', 'paragraph'),
+            ('D', 'subsection')
+        ])
+
+    def test_fix_ambiguous_statute(self):
+        test_data = [
+             ('625 5 11 501 A 2', '625-5/11-501(a)(2)'),
+             ('625 5 11 501 A2', '625-5/11-501(a)(2)'),
+             ('625 5 11 501 A1', '625-5/11-501(a)(1)'),
+             ('625 5 11 402', '625-5/11-402'),
+             ('625 5 12 201B', '625-5/12-201(b)'),
+             ('625 5 3 707', '625-5/3-707'),
+             ('625 5 6 303', '625-5/6-303'),
+             ('625 5 11 501 A4', '625-5/11-501(a)(4)'),
+             ('625 5 6 393 9', '625-5/6-393(9)'),
+             ('625 5 11 501 A', '625-5/11-501(a)'),
+             ('720/5.0/16A-3-A', '720-5/16A-3(a)'),
+             ('720 5-18-5A', '720-5/18(5)(a)'),
+             ('720-5 11-20.1(A)(7)', '720-5/11-20.1(a)(7)'),
+             ('720/5-19-1', '720-5/19-1'),
+             ('720-5/18-2(a)(4)', '720-5/18-2(a)(4)'),
+        ]
+        for raw, expected in test_data:
+            fixed = statute.fix_ambiguous_statute(raw)
+            self.assertEqual(fixed, expected)
+
     def test_parse_statute(self):
         test_values = [
-            #('38-8-4(38-9-1)', ('38', '8-4', '(38-9-1)')),
+            ('38-8-4(38-9-1)', '720', '5', '9-1'),
             ('38 9-1E', '720', '5', '9-1'),
             ('56.5-704-D', '720', '550', '4'),
             ('56.5 1401 (D)', '720', '570', '401'),
@@ -271,13 +370,14 @@ class StatuteTestCase(unittest.TestCase):
             ('56.5.1407-B(2)', '720', '570', '407'),
             ('38-16A-3A', '720', '5', '16A-3'),
             ('720 5/8-2 (18-2)', '720', '5', '8-2'),
+            ('720-5/18-2(a)(4)', '720', '5', '18-2'),
+            #('720-5\8-4(18-2(a)4)', '720', '5', '18-2')
         ]
         for s, chapter, act_prefix, section in test_values:
-            ilcs_sections, paragraph = statute.parse_statute(s)
-            ilcs_section = ilcs_sections[0]
-            self.assertEqual(ilcs_section.chapter, chapter)
-            self.assertEqual(ilcs_section.act_prefix, act_prefix)
-            self.assertEqual(ilcs_section.section, section)
+            parsed = statute.parse_statute(s)
+            self.assertEqual(parsed[0][0], chapter)
+            self.assertEqual(parsed[1][0], act_prefix)
+            self.assertEqual(parsed[2][0], section)
 
     def test_get_iucr(self):
         test_values = [
@@ -288,14 +388,19 @@ class StatuteTestCase(unittest.TestCase):
             ('430-65/2(A)(1)4', '1460'),
             ('730-150/3', '4505'),
             ('720-250/8', '1150'),
+            ('720-5\8-1(32-4A(A)2)', '3800'),
+            ('720-5\8-2(26-1(A)4)', '2860'),
+            #('720-5\8-2(570\\401D)', ''),
+            ('720-5\8-4(12-14.1A1)', '0280'),
+            ('720-5\8-4(18-3A)', '0325'),
+            #('720-5\8-4(401-A-2-D)', ''),
+            ('720-8-4(720-5/18-2A)', '0310'),
         ]
         for s, iucr_code in test_values:
             iucr_offense = statute.get_iucr(s)[0]
             self.assertEqual(iucr_offense.code, iucr_code)
 
-
-class AttemptedStatuteTestCase(unittest.TestCase):
-    def test_strip_attempted(self):
+    def test_strip_attempted_statute(self):
         test_data = [
             ('720-5\8-4(12-16(A)4)', '720-5/12-16(A)4', '720-5\8-4'),
             ('720- 8-4/19-1', '720-5/19-1', '720- 8-4'),
@@ -343,7 +448,7 @@ class AttemptedStatuteTestCase(unittest.TestCase):
             ('720-5/31A-1.1,5/8-4(A)', '720-5/31A-1.1', '5/8-4(A)'),
         ]
         for raw, expected_statute, expected_attempted_statute in test_data:
-            st, attempted_st = statute.strip_attempted(raw)
+            st, attempted_st = statute.strip_attempted_statute(raw)
             self.assertEqual(st, expected_statute)
             self.assertEqual(attempted_st, expected_attempted_statute)
 
