@@ -115,3 +115,75 @@ def get_iucr(s):
         return lookup_iucr_from_ilcs(ilcs_sections[0], paragraph)
     except KeyError:
         raise IUCRLookupError(s)
+
+def strip_surrounding_parens(s):
+    """
+    Strip surrounding parenthesis and curly braces from a string.
+    """
+    s = s.strip('{').strip('}')
+    if s[0] == "(" and s[2] != ")":
+        s = s[1:]
+    if s[-1] == ")" and s[-3] != "(":
+        s = s[:-1]
+
+    return s
+
+def strip_attempted(s):
+    """
+    Strip the citation indicating an attempted criminal offense from a string
+
+    Generally, this is some version of "720-5/8-4" (ILCS) or "38-8-4" (ILRS),
+    though the exact representation can vary widely.
+
+    This function is needed because attempted crimes are represented by
+    packing multiple statutes into a single field.  For example:
+
+    720-5/8-4 (720-5/18-2)
+    38-8-4(38-18-2)
+
+    This breaks parsing the statutes for tasks like determining IUCR codes.
+    
+    Returns:
+        A tuple where the first item is the statute indicating the crime and
+        the second item is the statute indicating an attempted offense. For
+        non-attempted offenses the second item will be None.
+
+    """
+    ilcs_attempted_statute_re = re.compile(r"""^(?P<attempted>(\({0,1}720[- ]+5{0,1}
+        [/\\ ]{0,1} # Optional delimiter
+        ){0,1} # Some statutes don't have the leading 720-5
+        \({0,1}8-4\){0,1}
+        (\({0,1}-{0,1}A\){0,1}){0,1} # Optional "(A)"
+        \/* # Optional trailing slash
+        \){0,1} # Optional trailing paren
+        ) # Close the group
+    """, re.VERBOSE|re.IGNORECASE)
+    ilcs_attempted_statute_trailing_re = re.compile(r',{0,1}(?P<attempted>5/8-4(\({0,1}A\){0,1}){0,1})$')
+    ilrs_attempted_statute_re = re.compile(r"""^(?P<attempted>38-8-4
+        [9/\\]{0,1} # Optional separator. Either '/', '\' or in a weid case '9'
+        ) # close the group
+    """, re.VERBOSE|re.IGNORECASE)
+
+    m = ilcs_attempted_statute_re.match(s)
+    if m is None:
+        m = ilcs_attempted_statute_trailing_re.search(s)
+    if m is None:
+        m = ilrs_attempted_statute_re.match(s)
+    if m is None:
+        # No match of an attempted part
+        return s, None
+
+    attempted_part = m.group('attempted')
+    statute = s.replace(attempted_part, '')
+    statute = statute.strip()
+    statute = re.sub(r'^[/\\,\x1a]+', '', statute)
+    statute = re.sub(r'[/\\,\x1a]+$', '', statute)
+    if attempted_part.startswith('38'):
+        attempted_part = re.sub(r'[9/\\]{0,1}$', '', attempted_part)
+    statute = strip_surrounding_parens(statute)
+    if not (statute.startswith("720") or statute.startswith('38') or
+            statute.startswith("56.5")):
+        statute = "720-5/" + statute
+    attempted_part = attempted_part.strip('/').strip('\\')
+
+    return statute, attempted_part
