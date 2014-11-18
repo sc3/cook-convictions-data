@@ -786,6 +786,8 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
         help_text=("Is this place within one of the counties that is part "
             "of Chicago's Metropolitan Statistical Area: Cook, DeKalb, "
             "DuPage, Grundy, Kane, Kendall, McHenry, Will, Lake"))
+    in_cook_county = geo_models.BooleanField(default=False,
+        help_text="Is this palce within Cook County?")
 
     # Spatial fields
     boundary = geo_models.MultiPolygonField()
@@ -820,6 +822,52 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
     @classmethod
     def get_conviction_related_field_name(cls):
         return 'place'
+
+
+
+class County(geo_models.Model):
+    statefp10 = geo_models.CharField(max_length=2)
+    countyfp10 = geo_models.CharField(max_length=3)
+    countyns10 = geo_models.CharField(max_length=8)
+    geoid10 = geo_models.CharField(max_length=5)
+    name = geo_models.CharField(max_length=100)
+    namelsad10 = geo_models.CharField(max_length=100)
+    lsad10 = geo_models.CharField(max_length=2)
+    classfp10 = geo_models.CharField(max_length=2)
+    mtfcc10 = geo_models.CharField(max_length=5)
+    csafp10 = geo_models.CharField(max_length=3)
+    cbsafp10 = geo_models.CharField(max_length=5)
+    metdivfp10 = geo_models.CharField(max_length=5)
+    funcstat10 = geo_models.CharField(max_length=1)
+    aland10 = geo_models.FloatField()
+    awater10 = geo_models.FloatField()
+    intptlat10 = geo_models.CharField(max_length=11)
+    intptlon10 = geo_models.CharField(max_length=12)
+    geom = geo_models.MultiPolygonField()
+                                                                           
+    objects = geo_models.GeoManager()
+
+    FIELD_MAPPING = {
+        'statefp10' : 'STATEFP10',
+        'countyfp10' : 'COUNTYFP10',
+        'countyns10' : 'COUNTYNS10',
+        'geoid10' : 'GEOID10',
+        'name' : 'NAME10',
+        'namelsad10' : 'NAMELSAD10',
+        'lsad10' : 'LSAD10',
+        'classfp10' : 'CLASSFP10',
+        'mtfcc10' : 'MTFCC10',
+        'csafp10' : 'CSAFP10',
+        'cbsafp10' : 'CBSAFP10',
+        'metdivfp10' : 'METDIVFP10',
+        'funcstat10' : 'FUNCSTAT10',
+        'aland10' : 'ALAND10',
+        'awater10' : 'AWATER10',
+        'intptlat10': 'INTPTLAT10',
+        'intptlon10': 'INTPTLON10',
+        'geom': 'MULTIPOLYGON',
+    }
+
 
 
 def handle_post_load_spatial_data(sender, **kwargs):

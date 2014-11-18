@@ -31,7 +31,10 @@ class Command(BaseCommand):
         if model_name == 'CensusPlace':
             # For census places, we only want places in Chicago's metro area,
             # excluding the City of Chicago
-            qs = qs.filter(in_chicago_msa=True).exclude(name="Chicago")
+            #qs = qs.filter(in_chicago_msa=True).exclude(name="Chicago")
+
+            # For census places, we only want places in Cook County
+            qs = qs.filter(in_cook_county=True).exclude(name="Chicago")
 
         if options['name'] is not None:
             qs = qs.filter(name=options['name'])

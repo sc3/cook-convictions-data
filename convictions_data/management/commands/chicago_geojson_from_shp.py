@@ -21,9 +21,6 @@ class Command(BaseCommand):
     def handle(self, shapefile, *args, **options):
         with fiona.open(shapefile) as c:
             chi = next(f for f in c if f['properties']['NAME10'] == "Chicago")
-            #chi_poly = Polygon(chi['geometry']['coordinates'][0])
-            #chi_poly = chi_poly.simplify(options['simplify'])
-            #geo = json.loads(chi_poly.boundary.geojson)
             geojson_dict = {
                 "type": "FeatureCollection",
                 "features": [],
