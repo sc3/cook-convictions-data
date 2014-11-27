@@ -29,7 +29,7 @@ ilcs_chapters = [str(c) for c in [
 ]]
 ilcs_chapters_str = '|'.join(ilcs_chapters)
 ilcs_statute_re = re.compile(r"""(?P<chapter>{chapters})
-    [- ] # Delimiter between chapter and act prefix 
+    [- ] # Delimiter between chapter and act prefix
     (?P<act_prefix>\d+)
     [/\\] # Delimiter between act prefix and section
     (?P<section>[\da-zA-Z.]+(-[\da-zA-Z.]+){{0,1}})
@@ -41,7 +41,7 @@ ilrs_chapters = [
     '38',
     '42',
     '56.5',
-    '95.5',      
+    '95.5',
     '121.5',
     '124',
     '134',
@@ -63,7 +63,7 @@ class ILCSLookupError(Exception):
 
     def __str__(self):
         msg = "Unable to find ILCS statute for raw statute '{}'".format(self.raw_statute)
-        
+
         return msg
 
 class StatuteFormatError(Exception):
@@ -73,6 +73,15 @@ class StatuteFormatError(Exception):
 
     def __str__(self):
         return "Can't understand statute '{}'".format(self.raw_statute)
+
+class MultipleMatchingILCSError(Exception):
+    """Exception raised when an ILRS statute matches multiple ILCS statutes"""
+    def __init__(self, raw_statute):
+        self.raw_statute = raw_statute
+
+    def __str__(self):
+        return ("More than one matching ILCS sections "
+                "for raw statute '{}'".format(self.raw_statute))
 
 class IUCRLookupError(Exception):
     """Exception raised when a matching IUCR offense for an ILCS section cannot
@@ -102,7 +111,7 @@ def parse_statute(s):
     except KeyError:
         # No match
 
-        # Try stripping trailing bits from paragraph 
+        # Try stripping trailing bits from paragraph
         m = ilrs_paragraph_re.match(paragraph)
         if not m:
             raise ILCSLookupError(chapter, paragraph, s)
@@ -113,8 +122,9 @@ def parse_statute(s):
         except KeyError:
             raise ILCSLookupError(chapter, paragraph, s)
 
-    assert len(ilcs_sections) == 1, ("More than one matching ILCS sections "
-        "for raw statute '{}'".format(s))
+    if len(ilcs_sections) != 1:
+        raise MultipleMatchingILCSError(s)
+
     ilcs_section = ilcs_sections[0]
     ilcs_parsed = [
         (ilcs_section.chapter, 'chapter'),
@@ -128,9 +138,9 @@ def parse_statute(s):
 def parse_subsection(s):
     """
     Parse the subsection portion of a statute citation
-    
+
     Arguments:
-        s (str): String containing the subsection portion of statute citation 
+        s (str): String containing the subsection portion of statute citation
 
     Returns:
         List of strings representing the subsection bits
@@ -139,7 +149,7 @@ def parse_subsection(s):
     ['c', '2']
     """
     subsections = []
-    bits = re.split(r'[-(\s]', s) 
+    bits = re.split(r'[-(\s]', s)
     for bit in bits:
         if bit:
             subsections.append(re.sub(r'[)]$', '', bit))
@@ -149,7 +159,7 @@ def parse_ilcs_statute(s):
     statute_parts = []
     m = ilcs_statute_re.match(s)
     if not m:
-        return statute_parts 
+        return statute_parts
 
     statute_parts.append((m.group('chapter'), 'chapter'))
     statute_parts.append((m.group('act_prefix'), 'act_prefix'))
@@ -288,25 +298,42 @@ def fix_ambiguous_statute(s):
         except KeyError:
             return s
 
-def get_iucr(s):
+def format_statute(parsed_statute):
+    """Nicely format a parsed statute"""
+    chapter = parsed_statute[0][0]
+    act_prefix = parsed_statute[1][0]
+    section = parsed_statute[2][0]
+    subsections = [ss[0] for ss in parsed_statute[3:]]
+    formatted = "{}-{}/{}".format(chapter, act_prefix, section)
+
+    for ss in subsections:
+        formatted += "({})".format(ss)
+
+    return formatted
+
+def get_iucr(parsed_statute):
     try:
-        parsed = parse_statute(s)
-        chapter = parsed[0][0]
-        act_prefix = parsed[1][0]
-        section = parsed[2][0]
-        subsections = [ss[0] for ss in parsed[3:]]
+        chapter = parsed_statute[0][0]
+        act_prefix = parsed_statute[1][0]
+        section = parsed_statute[2][0]
+        subsections = [ss[0] for ss in parsed_statute[3:]]
         return iucr.lookup_by_ilcs(chapter, act_prefix, section, *subsections)
     except KeyError:
-        raise IUCRLookupError(s)
+        raise IUCRLookupError(format_statute(parsed_statute))
 
 def strip_surrounding_parens(s):
     """
     Strip surrounding parenthesis and curly braces from a statute string.
     """
     s = s.strip('{').strip('}')
-    if s[0] == "(" and s[2] != ")":
+
+    if len(s) == 0:
+        return s
+
+    if s[0] == "(" and (len(s) < 3 or s[2] != ")"):
         s = s[1:]
-    if s[-1] == ")" and s[-3] != "(":
+
+    if s[-1] == ")" and (len(s) < 3 or s[-3] != "("):
         s = s[:-1]
 
     return s
@@ -319,7 +346,7 @@ def strip_attempted_statute(s):
     For attempted offenses, this is some version of "720-5/8-4" (ILCS) or
     "38-8-4" (ILRS). For conspiracy offenses it's "720-5/8-2" and for
     solicitation it's "720-5/8-1".
-    
+
     The exact representation can vary widely.
 
     This function is needed because attempted crimes are represented by
@@ -329,7 +356,7 @@ def strip_attempted_statute(s):
     38-8-4(38-18-2)
 
     This breaks parsing the statutes for tasks like determining IUCR codes.
-    
+
     Returns:
         A tuple where the first item is the statute indicating the crime and
         the second item is the statute indicating an attempted offense. For

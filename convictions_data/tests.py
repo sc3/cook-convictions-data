@@ -18,11 +18,11 @@ except ImportError:
     from django.test.simple import DjangoTestSuiteRunner as BaseRunner
 
 __test__ = {
-    'parse_subsection': statute.parse_subsection,        
+    'parse_subsection': statute.parse_subsection,
 }
 
 # Database-less test runner from
-# http://www.caktusgroup.com/blog/2013/10/02/skipping-test-db-creation/ 
+# http://www.caktusgroup.com/blog/2013/10/02/skipping-test-db-creation/
 class NoDatabaseMixin(object):
     """
     Test runner mixin which skips the DB setup/teardown
@@ -140,16 +140,16 @@ class DispositionModelTestCase(TestCase):
         self.assertEqual(disposition.zipcode, raw.zipcode)
         self.assertEqual(disposition.dob, datetime.date(1943, 11, 19))
         self.assertEqual(disposition.arrest_date, datetime.date(1989, 6, 2))
-        self.assertEqual(disposition.minsent_years, 1) 
-        self.assertEqual(disposition.minsent_months, 0) 
-        self.assertEqual(disposition.minsent_days, 0) 
-        self.assertEqual(disposition.minsent_life, False) 
-        self.assertEqual(disposition.minsent_death, False) 
-        self.assertEqual(disposition.maxsent_years, 1) 
-        self.assertEqual(disposition.maxsent_months, 0) 
-        self.assertEqual(disposition.maxsent_days, 0) 
-        self.assertEqual(disposition.maxsent_life, False) 
-        self.assertEqual(disposition.maxsent_death, False) 
+        self.assertEqual(disposition.minsent_years, 1)
+        self.assertEqual(disposition.minsent_months, 0)
+        self.assertEqual(disposition.minsent_days, 0)
+        self.assertEqual(disposition.minsent_life, False)
+        self.assertEqual(disposition.minsent_death, False)
+        self.assertEqual(disposition.maxsent_years, 1)
+        self.assertEqual(disposition.maxsent_months, 0)
+        self.assertEqual(disposition.maxsent_days, 0)
+        self.assertEqual(disposition.maxsent_life, False)
+        self.assertEqual(disposition.maxsent_death, False)
 
     def test_parse_sentence(self):
         test_values = [
@@ -184,7 +184,7 @@ class BatchOpenMapQuestTestCase(TestCase):
     def setUp(self):
         self.geocoder = BatchOpenMapQuest(
             api_key=settings.CONVICTIONS_GEOCODER_API_KEY)
-       
+
     def test_batch_geocode(self):
         test_values = [
             ("3411 W Diversey Ave,60647", (41.931631, -87.726857)),
@@ -397,8 +397,19 @@ class StatuteTestCase(unittest.TestCase):
             ('720-8-4(720-5/18-2A)', '0310'),
         ]
         for s, iucr_code in test_values:
-            iucr_offense = statute.get_iucr(s)[0]
+            parsed = statute.parse_statute(s)
+            iucr_offense = statute.get_iucr(parsed)[0]
             self.assertEqual(iucr_offense.code, iucr_code)
+
+    def test_format_statute(self):
+        test_values = [
+            ('720-570/402(c)', '720-570/402(c)'),
+            ('720-570/402(a)(2)(A)', '720-570/402(a)(2)(A)'),
+        ]
+        for s, expected_formatted in test_values:
+            parsed = statute.parse_statute(s)
+            formatted = statute.format_statute(parsed)
+            self.assertEqual(formatted, expected_formatted)
 
     def test_strip_attempted_statute(self):
         test_data = [
@@ -452,6 +463,18 @@ class StatuteTestCase(unittest.TestCase):
             self.assertEqual(st, expected_statute)
             self.assertEqual(attempted_st, expected_attempted_statute)
 
+    def test_strip_surrounding_parens(self):
+        test_data = [
+            ("", ""),
+            ("(a", "a"),
+            ("a)", "a"),
+            ("(a)", "(a)"),
+            ("(720-5/8-4)", "720-5/8-4"),
+        ]
+        for raw, stripped_expected in test_data:
+            self.assertEqual(statute.strip_surrounding_parens(raw),
+                             stripped_expected)
+
 
 class AddressAnonymizerTestCase(SimpleTestCase):
     def setUp(self):
@@ -466,7 +489,7 @@ class AddressAnonymizerTestCase(SimpleTestCase):
             ('523 W 999TH ST 2ND FL', '500 W 999TH ST'),
             ('5920 N HILL #220', '5900 N HILL'),
         ]
-        
+
         for address, expected in test_data:
             anonymized = self.anonymizer.anonymize(address)
             self.assertEqual(anonymized, expected)

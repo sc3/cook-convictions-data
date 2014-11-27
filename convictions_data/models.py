@@ -18,8 +18,9 @@ from convictions_data.manager import (CensusPlaceManager,
     CensusTractManager, CommunityAreaManager, DispositionManager)
 
 from convictions_data.query import ConvictionQuerySet
-from convictions_data.statute import (get_iucr, ILCSLookupError,
-        IUCRLookupError, StatuteFormatError)
+from convictions_data.statute import (get_iucr, parse_statute, format_statute,
+    MultipleMatchingILCSError, ILCSLookupError, IUCRLookupError,
+    StatuteFormatError)
 from convictions_data.signals import post_load_spatial_data
 
 
@@ -171,9 +172,15 @@ class Disposition(models.Model):
     amtoffine = models.IntegerField(null=True)
 
     final_statute = models.CharField(max_length=50, default="",
-        help_text="Field to make querying easier.  Set to the value of "
-        "ammndchargstatute if present, otherwise set to the value of statute",
+        help_text=("Field to make querying easier.  Set to the value of "
+                   "ammndchargstatute if present, otherwise set to the value "
+                   "of statute"),
         db_index=True)
+    final_statute_formatted = models.CharField(max_length=50, default="",
+        db_index=True,
+        help_text=("Value from final_statute but parsed and reformatted "
+                   "to try to normalize the formats and make grouping "
+                   "queries easier"))
     final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
     final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
         default="", db_index=True)
@@ -282,23 +289,7 @@ class Disposition(models.Model):
         self.statute = val
 
         if val:
-            self.final_statute = val
-
-            try:
-                offenses = get_iucr(val)
-                if len(offenses) == 1:
-                    self.iucr_code = offenses[0].code
-                    self.iucr_category = offenses[0].offense_category
-                else:
-                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
-            except IUCRLookupError as e:
-                logger.warn(e)
-            except ILCSLookupError as e:
-                logger.warn(e)
-            except AssertionError as e:
-                logger.warn(e)
-            except StatuteFormatError as e:
-                logger.warn(e)
+            self.load_final_statute_and_iucr(val)
 
         return self
 
@@ -333,23 +324,36 @@ class Disposition(models.Model):
         self.ammndchargstatute = val
 
         if val:
-            self.final_statute = val
+            self.load_final_statute_and_iucr(val)
 
-            try:
-                offenses = get_iucr(val)
-                if len(offenses) == 1:
-                    self.iucr_code = offenses[0].code
-                    self.iucr_category = offenses[0].offense_category
-                else:
-                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
-            except IUCRLookupError as e:
-                logger.warn(e)
-            except ILCSLookupError as e:
-                logger.warn(e)
-            except AssertionError as e:
-                logger.warn(e)
-            except StatuteFormatError as e:
-                logger.warn(e)
+        return self
+
+    def load_final_statute_and_iucr(self, val):
+        """Populate the final_statute, final_statute_formatted, iucr_code and
+        iucr_category fields from the value."""
+        self.final_statute = val
+
+        try:
+            parsed_statute = parse_statute(val)
+        except (StatuteFormatError, ILCSLookupError, MultipleMatchingILCSError) as e:
+            logger.warn(e)
+            # If we weren't able to parse the statute, return early
+            return self
+        else:
+            # We've parsed the statute. Format it, and save this value.
+            self.final_statute_formatted = format_statute(parsed_statute)
+
+        try:
+            offenses = get_iucr(parsed_statute)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+        except IUCRLookupError as e:
+            # HACK: The original error will have a nicely-formatted statute.
+            # Replace it with the raw statute value
+            logger.warn(IUCRLookupError(val))
 
         return self
 
@@ -554,9 +558,15 @@ class Conviction(models.Model):
 
     chrgdispdate = models.DateField(null=True)
     final_statute = models.CharField(max_length=50, default="",
-        help_text="Field to make querying easier.  Set to the value of "
-        "ammndchargstatute if present, otherwise set to the value of statute",
+        help_text=("Field to make querying easier.  Set to the value of "
+                   "ammndchargstatute if present, otherwise set to the value "
+                   "of statute"),
         db_index=True)
+    final_statute_formatted = models.CharField(max_length=50, default="",
+        db_index=True,
+        help_text=("Value from final_statute but parsed and reformatted "
+                   "to try to normalize the formats and make grouping "
+                   "queries easier"))
     final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
     final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
         default="", db_index=True)
@@ -844,7 +854,7 @@ class County(geo_models.Model):
     intptlat10 = geo_models.CharField(max_length=11)
     intptlon10 = geo_models.CharField(max_length=12)
     geom = geo_models.MultiPolygonField()
-                                                                           
+
     objects = geo_models.GeoManager()
 
     FIELD_MAPPING = {
