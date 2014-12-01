@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 import logging
 
 from django.conf import settings
@@ -315,6 +315,34 @@ class DispositionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin,
         for d in vals:
             d['st_address'] = anonymizer.anonymize(d['st_address'])
             yield d
+
+    def felonies(self):
+        return self.filter(final_chrgtype='F')
+
+    def initial_felonies(self):
+        return self.filter(chrgtype='F')
+
+    def misdemeanors(self):
+        return self.filter(final_chrgtype='M')
+
+    def initial_misdemeanors(self):
+        return self.filter(chrgtype='M')
+
+    def misdemeanor_to_felony(self):
+        return self.filter(chrgtype='M', final_chrgtype='F')
+
+    def felony_to_misdemeanor(self):
+        return self.filter(chrgtype='F', final_chrgtype='M')
+
+    def felony_always(self):
+        return self.filter(chrgtype='F', final_chrgtype='F')
+
+    def num_cases(self):
+        return self.values('case_number').distinct().count()
+
+    def initial_date_in_year(self, year):
+        return self.filter(initial_date__gte=date(year, 1, 1),
+                           initial_date__lte=date(year, 12, 31))
 
 
 class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, QuerySet):

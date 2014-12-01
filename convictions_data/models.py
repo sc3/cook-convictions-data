@@ -243,6 +243,8 @@ class Disposition(models.Model):
 
             self.load_field_from_raw(field_name)
 
+        self.load_final_fields()
+
         return self
 
     def load_field_from_raw(self, field_name):
@@ -268,6 +270,21 @@ class Disposition(models.Model):
 
         return self
 
+    def load_final_fields(self):
+        self.load_final_statute_and_iucr(self.statute, self.ammndchargstatute)
+        self.load_final_field('final_chrgdesc', self.chrgdesc,
+                              self.ammndchrgdescr)
+        self.load_final_field('final_chrgtype', self.chrgtype,
+                              self.ammndchrgtype)
+        self.load_final_field('final_chrgclass', self.chrgclass,
+                              self.ammndchrgclass)
+        return self
+
+    def load_final_field(self, fieldname, val1, val2):
+        val = val2 if val2 else val1
+        setattr(self, fieldname, val)
+        return self
+
     def _load_field_city_state(self, val):
         self.city, self.state = self._parse_city_state(val)
         if not self.state:
@@ -287,24 +304,15 @@ class Disposition(models.Model):
 
     def _load_field_statute(self, val):
         self.statute = val
-
-        if val:
-            self.load_final_statute_and_iucr(val)
-
         return self
 
     def _load_field_chrgdesc(self, val):
         self.chrgdesc = val
-        if val:
-            self.final_chrgdesc = val
         return self
 
     def _load_field_chrgtype(self, val):
         self.chrgtype = val
         assert len(self.chrgtype) <= 1, self._invalid_len_msg('chrgtype')
-        if val:
-            self.final_chrgtype = val
-            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
 
     def _invalid_len_msg(self, attr):
@@ -315,26 +323,19 @@ class Disposition(models.Model):
     def _load_field_chrgclass(self, val):
         self.chrgclass = val
         assert len(self.chrgclass) <= 1, self._invalid_len_msg('chrgclass')
-        if val:
-            self.final_chrgclass = val
-            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
-
-        if val:
-            self.load_final_statute_and_iucr(val)
-
         return self
 
-    def load_final_statute_and_iucr(self, val):
+    def load_final_statute_and_iucr(self, val1, val2):
         """Populate the final_statute, final_statute_formatted, iucr_code and
         iucr_category fields from the value."""
-        self.final_statute = val
+        self.load_final_field('final_statute', val1, val2)
 
         try:
-            parsed_statute = parse_statute(val)
+            parsed_statute = parse_statute(self.final_statute)
         except (StatuteFormatError, ILCSLookupError, MultipleMatchingILCSError) as e:
             logger.warn(e)
             # If we weren't able to parse the statute, return early
@@ -349,34 +350,26 @@ class Disposition(models.Model):
                 self.iucr_code = offenses[0].code
                 self.iucr_category = offenses[0].offense_category
             else:
-                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(self.final_statute))
         except IUCRLookupError as e:
             # HACK: The original error will have a nicely-formatted statute.
             # Replace it with the raw statute value
-            logger.warn(IUCRLookupError(val))
+            logger.warn(IUCRLookupError(self.final_statute))
 
         return self
 
     def _load_field_ammndchrgdescr(self, val):
         self.ammndchrgdescr = val
-        if val:
-            self.final_chrgdesc = val
         return self
 
     def _load_field_ammndchrgtype(self, val):
         self.ammndchrgtype = val
         assert len(self.ammndchrgtype) <= 1, self._invalid_len_msg('ammndchrgtype')
-        if val:
-            self.final_chrgtype = val
-            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
 
     def _load_field_ammndchrgclass(self, val):
         self.ammndchrgclass = val
         assert len(self.ammndchrgclass) <= 1, self._invalid_len_msg('ammndchrgclass')
-        if val:
-            self.final_chrgclass = val
-            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def boundarize(self):
@@ -392,7 +385,6 @@ class Disposition(models.Model):
                 return self.place
             except CensusPlace.DoesNotExist:
                 return False
-
 
     @classmethod
     def _parse_city_state(cls, city_state):

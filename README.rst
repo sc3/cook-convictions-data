@@ -218,6 +218,37 @@ Export Disposition model records to CSV.  Anonymize the data by dropping persona
     ./manage.py export_public_data > dispositions.csv
 
 
+Export table of felony convictions
+----------------------------------
+
+Export a CSV table of felony convictions by class and year, mirroring the format of the data at https://performance.cookcountyil.gov/Public-Safety/Number-Of-Felony-Cases-Filed-By-Felony-Class/kcfs-dufb
+
+Export count of cases where there ended up being a felony conviction.  In this case, there may have been a charge that started as a misdemeanor but was later ammended to be a felony.
+
+::
+
+    ./manage.py export_cases_by_class
+
+
+Export count of cases where there was always a felony charge.  That is, the charges filed were for felonies and they were never ammended to a different type.
+
+::
+
+    ./manage.py export_cases_by_class --filter felony_always
+
+
+Export table of how charge classes were amended
+-----------------------------------------------
+
+::
+
+    ./manage export_cases_class_change
+
+Or, as percentages (which is probably easier for seeing trends) ::
+
+    ./manage export_cases_class_change --pct
+
+
 Manual Processes
 ================
 
