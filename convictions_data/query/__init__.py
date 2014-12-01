@@ -23,6 +23,8 @@ from convictions_data.query.iucr import (
     property_iucr_query,
     violent_iucr_query, violent_nonindex_iucr_query)
 from convictions_data.query.sex import SexQuerySetMixin
+from convictions_data.query.statute import (PROPERTY_INDEX_STATUTE_QUERY,
+    VIOLENT_INDEX_STATUTE_QUERY, AFFECTING_WOMEN_STATUTE_QUERY)
 
 logger = logging.getLogger(__name__)
 
@@ -322,8 +324,8 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
     These categories were selected by Tracy.
 
     """
-    # TODO: Add queries based on charge description as workaround or supplement
-    # to statutes that couldn't be coded to IUCR codes
+    # TODO: Add queries for violent vs. nonviolent, not just index and
+    # nonindex.
 
     def violent_index_crimes(self):
         """
@@ -337,7 +339,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Agg Battery / Agg Assault (as a single category for UCR)
 
         """
-        qs = self.filter(violent_iucr_query)
+        qs = self.filter(violent_iucr_query | VIOLENT_INDEX_STATUTE_QUERY)
         # Exclude non-index crimes
         qs = qs.exclude(violent_nonindex_iucr_query)
         return qs
@@ -353,7 +355,7 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Motor Vehicle Theft
         * Arson
         """
-        qs = self.filter(property_iucr_query)
+        qs = self.filter(property_iucr_query | PROPERTY_INDEX_STATUTE_QUERY)
         qs = qs.exclude(arson_nonindex_iucr_query)
         return qs
 
@@ -378,7 +380,8 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         * Domestic Violence
         * Stalking / Violation of Order of Protection:
         """
-        return self.filter(crimes_affecting_women_iucr_query)
+        return self.filter(crimes_affecting_women_iucr_query |
+                           AFFECTING_WOMEN_STATUTE_QUERY)
 
     def homicides(self):
         return self.filter(homicide_iucr_query | homicide_nonindex_iucr_query)
