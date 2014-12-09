@@ -817,6 +817,9 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
 
     GEOJSON_FIELDS = GEOJSON_FIELDS_BASE
 
+    def __str__(self):
+        return self.name
+
     @classmethod
     def get_conviction_related_column_name(cls):
         return 'place_id'
