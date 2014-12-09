@@ -424,51 +424,66 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
         felony_classes = ['x', 1, 2, 3, 4]
         misdemeanor_classes = ['a', 'b', 'c']
 
-        mfg_del = {}
-        poss = {}
+        rows = []
 
-        mfg_del['label'] = "Manufacture or Delivery"
-        mfg_del.update(self._add_charge_class_counts(felony_classes,
+        rows.extend(self._add_charge_class_counts(
+            "Manufacture or Delivery", felony_classes,
             'mfg_del_class_{}_felony', 'felony_{}', "Class {} Felony"))
-        mfg_del.update(self._add_charge_class_counts(misdemeanor_classes,
+        rows.extend(self._add_charge_class_counts(
+            "Manufacture or Deliver", misdemeanor_classes,
             'mfg_del_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
 
-        mfg_del['unkwn_class'] = {}
-        mfg_del['unkwn_class']['value'] = self.mfg_del_unkwn_class().count()
-        mfg_del['unkwn_class']['label'] = "Unknown Class"
+        rows.append({
+            'offense_type': "Manufacture or Delivery",
+            'slug': 'unkwn_class',
+            'value': self.mfg_del_unkwn_class().count(),
+            'label': "Unknown Class",
+        })
 
-        poss['label'] = "Possession"
-        poss['unkwn_class'] = {}
-        poss['unkwn_class']['value'] = self.poss_unkwn_class().count()
-        poss['unkwn_class']['label'] = "Unknown Class"
-
-        poss['no_class'] = {}
-        poss['no_class']['value'] = self.poss_no_class().count()
-        poss['no_class']['label'] = "No Class"
-        poss.update(self._add_charge_class_counts(felony_classes,
+        rows.extend(self._add_charge_class_counts(
+            "Possession", felony_classes,
             'poss_class_{}_felony', 'felony_{}', "Class {} Felony"))
-        poss.update(self._add_charge_class_counts(misdemeanor_classes,
-        'poss_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
+        rows.extend(self._add_charge_class_counts(
+            "Possession", misdemeanor_classes,
+            'poss_class_{}_misd', 'misd_{}', "Class {} Misdemeanor"))
 
-        return [mfg_del, poss]
+        rows.append({
+            'offense_type': "Possession",
+            'slug': 'unkwn_class',
+            'value': self.poss_unkwn_class().count(),
+            'label': "Unknown Class",
+        })
 
-    def _add_charge_class_counts(self, offense_classes, method_tpl, key_tpl,
+        rows.append({
+            'offense_type': "Possession",
+            'slug': 'no_class',
+            'value': self.poss_no_class().count(),
+            'label': "No Class",
+        })
+
+        return rows 
+
+    def _add_charge_class_counts(self, offense_type, offense_classes, method_tpl, key_tpl,
             label_tpl):
-        result = {}
+        results = []
         for charge_cls in offense_classes:
             try:
                 method_name = method_tpl.format(charge_cls)
                 method = getattr(self, method_name)
                 key = key_tpl.format(charge_cls)
-                result[key] = {}
-                result[key]['value'] = method().count()
-                result[key]['label'] = label_tpl.format(str(charge_cls).upper())
+                val = {}
+                val['offense_type'] = offense_type
+                val['slug'] = key
+                val['value'] = method().count()
+                val['label'] = label_tpl.format(str(charge_cls).upper())
+                results.append(val)
             except AttributeError:
                 pass
 
-        return result
+        return results
 
     def drug_by_drug_type(self):
+        rows = []
         drug_types = [
             ('unkwn_drug', "Unknown Drug"),
             ('heroin', "Heroin"),
@@ -494,31 +509,30 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
             #('script_form', "Script Form"),
         ]
 
-        mfg_del = {
-            'label': "Manufacture or Delivery",
-        }
-        mfg_del.update(self._add_drug_type_counts(drug_types, 'mfg_del_{}'))
+        rows.extend("Manufacture or Delivery",
+            self._add_drug_type_counts(drug_types, 'mfg_del_{}'))
 
-        poss = {
-            'label': "Possession",
-        }
-        poss.update(self._add_drug_type_counts(drug_types, 'poss_{}'))
+        rows.extend("Possession",
+            self._add_drug_type_counts(drug_types, 'poss_{}'))
 
-        return [mfg_del, poss]
+        return rows 
 
-    def _add_drug_type_counts(self, drug_types, method_tpl):
-        result = {}
+    def _add_drug_type_counts(self, offense_type, drug_types, method_tpl):
+        rows = []
         for slug, label in drug_types:
             try:
                 method_name = method_tpl.format(slug)
                 method = getattr(self, method_name)
-                result[slug] = {}
-                result[slug]['value'] = method().count()
-                result[slug]['label']= label
+                rows.append({
+                    'offense_type': offense_type,
+                    'slug': slug,
+                    'label': label,
+                    'value': method().count(),
+                })
             except AttributeError:
                 pass
 
-        return result
+        return rows 
 
     def most_common_statutes(self, count=10):
         """Get the most common statutes"""

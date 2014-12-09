@@ -248,6 +248,13 @@ Or, as percentages (which is probably easier for seeing trends) ::
 
     ./manage export_cases_class_change --pct
 
+Export table of drug convictions
+--------------------------------
+
+::
+
+    ./manage.py export_drug_stats drug_by_class > export/drug_by_class.csv
+
 
 Manual Processes
 ================
