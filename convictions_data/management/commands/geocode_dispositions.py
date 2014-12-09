@@ -33,11 +33,6 @@ class Command(BaseCommand):
             dest='force',
             default=False,
             help='Geocode, even if the record already has a lat/lon'),
-        make_option('--noncook',
-            action='store_true',
-            dest='noncook',
-            default=False,
-            help='Geocode addresses outside of cook county'),
     )
 
     def handle(self, *args, **options):
@@ -50,11 +45,5 @@ class Command(BaseCommand):
         # By default, only try to geocode ungeocoded records
         if not options['force']:
             qs = qs.ungeocoded()
-
-        # By default, only try to geocode records in Cook County
-        if not options['noncook']:
-            cook_q = Q(county="Cook", state="IL")
-            chi_zip_q = Q(zipcode__startswith="606")
-            qs = qs.filter(cook_q | chi_zip_q)
 
         qs.geocode(timeout=options['timeout'])
