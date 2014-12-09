@@ -523,7 +523,8 @@ class ConvictionQuerySet(SexQuerySetMixin, AgeQuerySetMixin, DrugQuerySetMixin, 
     def most_common_statutes(self, count=10):
         """Get the most common statutes"""
         extra_select = {
-            'statute': "LOWER(final_statute)",
+        #    'statute': "LOWER(final_statute)",
+            'statute': "LOWER(final_statute_formatted)",
         }
         # We reassign to the same variable to avoid a long, multi-line
         # assignment with lots of chained methods
