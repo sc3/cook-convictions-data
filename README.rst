@@ -256,6 +256,13 @@ Export table of drug convictions
 
     ./manage.py export_drug_stats drug_by_class > export/drug_by_class.csv
 
+Export table of top community areas by DUI
+------------------------------------------
+
+::
+
+    ./manage.py export_dui_convictions_by_geo --model CommunityArea --count 20 > export/top_dui_community_areas.csv
+
 
 Manual Processes
 ================
