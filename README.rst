@@ -77,6 +77,13 @@ Then run::
 
     ./manage.py load_spatial_data CensusPlace data/tl_2010_17_place10/tl_2010_17_place10.shp
 
+Download and unpack the Shapefile version of the Illinois County data.
+
+Then run::
+
+    ./manage.py load_spatial_data County data/tl_2010_17_county10/tl_2010_17_county10.shp
+
+For generating the Chicago and Cook County border GeoJSON file, we use the cartographic versions of the county and place shapefiles because they remove offshore areas.  You'll want to download and unpack those too.
 
 Load census data
 ----------------
@@ -105,6 +112,14 @@ Identify suburbs
 ::
 
     ./manage.py flag_chicago_msa_places data/tl_2010_17_place10_chicago_msa.csv
+
+
+Identify suburbs in Cook County
+-------------------------------
+
+::
+
+    ./manage.py flag_cook_county_places
 
 
 Load raw dispositions data
@@ -163,12 +178,27 @@ Export Community Area and Census Place GeoJSON
     ./manage.py export_model_geojson CensusPlace > suburbs.json
 
 
-Extract Chicago's border from a shapefile
------------------------------------------
+Export most common charges overall
+----------------------------------
 
 ::
 
-    ./manage.py chicago_geojson_from_shp data/tl_2010_17_place10/tl_2010_17_place10.shp > chicago.json
+    ./manage.py most_common_statutes > top_statutes.csv
+
+Export most common charges by community area
+--------------------------------------------
+
+::
+
+    ./manage.py most_common_statutes_by_geo > top_statutes_by_community_area.csv
+
+
+Extract Chicago and Cook County's border from a shapefile
+---------------------------------------------------------
+
+::
+
+    ./manage.py border_geojson_from_shp data/gz_2010_17_160_00_500k/gz_2010_17_160_00_500k.shp data/gz_2010_us_050_00_500k/gz_2010_us_050_00_500k.shp > chicago_cook_borders.json
 
 Export convictions by age bucket
 --------------------------------
@@ -185,7 +215,45 @@ Export Disposition model records to CSV.  Anonymize the data by dropping persona
 
 ::
 
-    ./manage.py export_csv > dispositions.csv
+    ./manage.py export_public_data > dispositions.csv
+
+
+Export table of felony convictions
+----------------------------------
+
+Export a CSV table of felony convictions by class and year, mirroring the format of the data at https://performance.cookcountyil.gov/Public-Safety/Number-Of-Felony-Cases-Filed-By-Felony-Class/kcfs-dufb
+
+Export count of cases where there ended up being a felony conviction.  In this case, there may have been a charge that started as a misdemeanor but was later ammended to be a felony.
+
+::
+
+    ./manage.py export_cases_by_class
+
+
+Export count of cases where there was always a felony charge.  That is, the charges filed were for felonies and they were never ammended to a different type.
+
+::
+
+    ./manage.py export_cases_by_class --filter felony_always
+
+
+Export table of how charge classes were amended
+-----------------------------------------------
+
+::
+
+    ./manage export_cases_class_change
+
+Or, as percentages (which is probably easier for seeing trends) ::
+
+    ./manage export_cases_class_change --pct
+
+Export table of drug convictions
+--------------------------------
+
+::
+
+    ./manage.py export_drug_stats drug_by_class > export/drug_by_class.csv
 
 
 Manual Processes
@@ -228,6 +296,9 @@ Other datasets
 * `Cook County Municipalities <https://datacatalog.cookcountyil.gov/GIS-Maps/ccgisdata-Municipality/ta8t-zebk>`_
 * `Boundaries - Census Tracts - 2010 <https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Census-Tracts-2010/5jrd-6zik>`_
 * `2010 Illinois Census Place TIGER Shapefile <http://www2.census.gov/geo/tiger/TIGER2010/PLACE/2010/tl_2010_17_place10.zip>`_
+* `2010 Illinois County TIGER Shapefile <ftp://ftp2.census.gov/geo/pvs/tiger2010st/17_Illinois/17/tl_2010_17_county10.zip>`_
+* `2010 Census Cartographic Boundary Shapefile for Counties <https://www.census.gov/geo/maps-data/data/cbf/cbf_counties.html>`_
+* `2010 Census Cartographic Boundary Shapefile for Places <https://www.census.gov/geo/maps-data/data/cbf/cbf_place.html>`
 * 2010 ACS 5-year Estimates "TOTAL POPULATION" (B01003) for Cook County Census Tracts
 * 2010 ACS 5-year Estimates "TOTAL POPULATION" (B01003) for Illinois Census Places
 * 2010 ACS 5-year Estimates "PER CAPITA INCOME IN THE PAST 12 MONTHS (IN 2010 INFLATION-ADJUSTED DOLLARS)" (B19301) for Cook County Census Tracts

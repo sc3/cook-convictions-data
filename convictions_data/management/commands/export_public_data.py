@@ -29,7 +29,7 @@ class Command(BaseCommand):
 
         writer.writeheader()
 
-        for disp in qs.anonymized_values(): 
+        for disp in qs.order_by('case_number', 'sequence_number').anonymized_values(): 
             writer.writerow(disp)
 
     def _get_year_filter_kwargs(self, year):

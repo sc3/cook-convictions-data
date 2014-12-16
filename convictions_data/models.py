@@ -18,8 +18,9 @@ from convictions_data.manager import (CensusPlaceManager,
     CensusTractManager, CommunityAreaManager, DispositionManager)
 
 from convictions_data.query import ConvictionQuerySet
-from convictions_data.statute import (get_iucr, ILCSLookupError,
-        IUCRLookupError, StatuteFormatError)
+from convictions_data.statute import (get_iucr, parse_statute, format_statute,
+    MultipleMatchingILCSError, ILCSLookupError, IUCRLookupError,
+    StatuteFormatError)
 from convictions_data.signals import post_load_spatial_data
 
 
@@ -171,9 +172,15 @@ class Disposition(models.Model):
     amtoffine = models.IntegerField(null=True)
 
     final_statute = models.CharField(max_length=50, default="",
-        help_text="Field to make querying easier.  Set to the value of "
-        "ammndchargstatute if present, otherwise set to the value of statute",
+        help_text=("Field to make querying easier.  Set to the value of "
+                   "ammndchargstatute if present, otherwise set to the value "
+                   "of statute"),
         db_index=True)
+    final_statute_formatted = models.CharField(max_length=50, default="",
+        db_index=True,
+        help_text=("Value from final_statute but parsed and reformatted "
+                   "to try to normalize the formats and make grouping "
+                   "queries easier"))
     final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
     final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
         default="", db_index=True)
@@ -236,6 +243,8 @@ class Disposition(models.Model):
 
             self.load_field_from_raw(field_name)
 
+        self.load_final_fields()
+
         return self
 
     def load_field_from_raw(self, field_name):
@@ -261,6 +270,21 @@ class Disposition(models.Model):
 
         return self
 
+    def load_final_fields(self):
+        self.load_final_statute_and_iucr(self.statute, self.ammndchargstatute)
+        self.load_final_field('final_chrgdesc', self.chrgdesc,
+                              self.ammndchrgdescr)
+        self.load_final_field('final_chrgtype', self.chrgtype,
+                              self.ammndchrgtype)
+        self.load_final_field('final_chrgclass', self.chrgclass,
+                              self.ammndchrgclass)
+        return self
+
+    def load_final_field(self, fieldname, val1, val2):
+        val = val2 if val2 else val1
+        setattr(self, fieldname, val)
+        return self
+
     def _load_field_city_state(self, val):
         self.city, self.state = self._parse_city_state(val)
         if not self.state:
@@ -280,40 +304,15 @@ class Disposition(models.Model):
 
     def _load_field_statute(self, val):
         self.statute = val
-
-        if val:
-            self.final_statute = val
-
-            try:
-                offenses = get_iucr(val)
-                if len(offenses) == 1:
-                    self.iucr_code = offenses[0].code
-                    self.iucr_category = offenses[0].offense_category
-                else:
-                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
-            except IUCRLookupError as e:
-                logger.warn(e)
-            except ILCSLookupError as e:
-                logger.warn(e)
-            except AssertionError as e:
-                logger.warn(e)
-            except StatuteFormatError as e:
-                logger.warn(e)
-
         return self
 
     def _load_field_chrgdesc(self, val):
         self.chrgdesc = val
-        if val:
-            self.final_chrgdesc = val
         return self
 
     def _load_field_chrgtype(self, val):
         self.chrgtype = val
         assert len(self.chrgtype) <= 1, self._invalid_len_msg('chrgtype')
-        if val:
-            self.final_chrgtype = val
-            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
 
     def _invalid_len_msg(self, attr):
@@ -324,55 +323,53 @@ class Disposition(models.Model):
     def _load_field_chrgclass(self, val):
         self.chrgclass = val
         assert len(self.chrgclass) <= 1, self._invalid_len_msg('chrgclass')
-        if val:
-            self.final_chrgclass = val
-            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def _load_field_ammndchargstatute(self, val):
         self.ammndchargstatute = val
+        return self
 
-        if val:
-            self.final_statute = val
+    def load_final_statute_and_iucr(self, val1, val2):
+        """Populate the final_statute, final_statute_formatted, iucr_code and
+        iucr_category fields from the value."""
+        self.load_final_field('final_statute', val1, val2)
 
-            try:
-                offenses = get_iucr(val)
-                if len(offenses) == 1:
-                    self.iucr_code = offenses[0].code
-                    self.iucr_category = offenses[0].offense_category
-                else:
-                    logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(val))
-            except IUCRLookupError as e:
-                logger.warn(e)
-            except ILCSLookupError as e:
-                logger.warn(e)
-            except AssertionError as e:
-                logger.warn(e)
-            except StatuteFormatError as e:
-                logger.warn(e)
+        try:
+            parsed_statute = parse_statute(self.final_statute)
+        except (StatuteFormatError, ILCSLookupError, MultipleMatchingILCSError) as e:
+            logger.warn(e)
+            # If we weren't able to parse the statute, return early
+            return self
+        else:
+            # We've parsed the statute. Format it, and save this value.
+            self.final_statute_formatted = format_statute(parsed_statute)
+
+        try:
+            offenses = get_iucr(parsed_statute)
+            if len(offenses) == 1:
+                self.iucr_code = offenses[0].code
+                self.iucr_category = offenses[0].offense_category
+            else:
+                logger.warn("Multiple matching IUCR offenses found for statute '{}'".format(self.final_statute))
+        except IUCRLookupError as e:
+            # HACK: The original error will have a nicely-formatted statute.
+            # Replace it with the raw statute value
+            logger.warn(IUCRLookupError(self.final_statute))
 
         return self
 
     def _load_field_ammndchrgdescr(self, val):
         self.ammndchrgdescr = val
-        if val:
-            self.final_chrgdesc = val
         return self
 
     def _load_field_ammndchrgtype(self, val):
         self.ammndchrgtype = val
         assert len(self.ammndchrgtype) <= 1, self._invalid_len_msg('ammndchrgtype')
-        if val:
-            self.final_chrgtype = val
-            assert len(self.final_chrgtype) <= 1, self._invalid_len_msg('final_chrgtype')
         return self
 
     def _load_field_ammndchrgclass(self, val):
         self.ammndchrgclass = val
         assert len(self.ammndchrgclass) <= 1, self._invalid_len_msg('ammndchrgclass')
-        if val:
-            self.final_chrgclass = val
-            assert len(self.final_chrgclass) <= 1, self._invalid_len_msg('final_chrgclass')
         return self
 
     def boundarize(self):
@@ -388,7 +385,6 @@ class Disposition(models.Model):
                 return self.place
             except CensusPlace.DoesNotExist:
                 return False
-
 
     @classmethod
     def _parse_city_state(cls, city_state):
@@ -554,9 +550,15 @@ class Conviction(models.Model):
 
     chrgdispdate = models.DateField(null=True)
     final_statute = models.CharField(max_length=50, default="",
-        help_text="Field to make querying easier.  Set to the value of "
-        "ammndchargstatute if present, otherwise set to the value of statute",
+        help_text=("Field to make querying easier.  Set to the value of "
+                   "ammndchargstatute if present, otherwise set to the value "
+                   "of statute"),
         db_index=True)
+    final_statute_formatted = models.CharField(max_length=50, default="",
+        db_index=True,
+        help_text=("Value from final_statute but parsed and reformatted "
+                   "to try to normalize the formats and make grouping "
+                   "queries easier"))
     final_chrgdesc = models.CharField(max_length=50, default="", db_index=True)
     final_chrgtype = models.CharField(max_length=1, choices=CHRGTYPE_CHOICES,
         default="", db_index=True)
@@ -635,6 +637,11 @@ class ConvictionsAggregateMixin(object):
     def get_conviction_model(cls):
         return Conviction
 
+    def most_common_statutes(self, count=10):
+        filter_kwargs = {}
+        filter_kwargs[self.get_conviction_related_field_name()] = self
+        return self.get_conviction_model().objects.filter(**filter_kwargs).most_common_statutes(count)
+
 GEOJSON_FIELDS_BASE = [
     'name',
     'total_population',
@@ -703,6 +710,10 @@ class CommunityArea(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Mod
     @classmethod
     def get_conviction_related_column_name(cls):
         return 'community_area_id'
+
+    @classmethod
+    def get_conviction_related_field_name(cls):
+        return 'community_area'
 
 
 class CensusTract(CensusFieldsMixin, geo_models.Model):
@@ -777,6 +788,8 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
         help_text=("Is this place within one of the counties that is part "
             "of Chicago's Metropolitan Statistical Area: Cook, DeKalb, "
             "DuPage, Grundy, Kane, Kendall, McHenry, Will, Lake"))
+    in_cook_county = geo_models.BooleanField(default=False,
+        help_text="Is this palce within Cook County?")
 
     # Spatial fields
     boundary = geo_models.MultiPolygonField()
@@ -804,9 +817,62 @@ class CensusPlace(ConvictionsAggregateMixin, CensusFieldsMixin, geo_models.Model
 
     GEOJSON_FIELDS = GEOJSON_FIELDS_BASE
 
+    def __str__(self):
+        return self.name
+
     @classmethod
     def get_conviction_related_column_name(cls):
         return 'place_id'
+
+    @classmethod
+    def get_conviction_related_field_name(cls):
+        return 'place'
+
+
+
+class County(geo_models.Model):
+    statefp10 = geo_models.CharField(max_length=2)
+    countyfp10 = geo_models.CharField(max_length=3)
+    countyns10 = geo_models.CharField(max_length=8)
+    geoid10 = geo_models.CharField(max_length=5)
+    name = geo_models.CharField(max_length=100)
+    namelsad10 = geo_models.CharField(max_length=100)
+    lsad10 = geo_models.CharField(max_length=2)
+    classfp10 = geo_models.CharField(max_length=2)
+    mtfcc10 = geo_models.CharField(max_length=5)
+    csafp10 = geo_models.CharField(max_length=3)
+    cbsafp10 = geo_models.CharField(max_length=5)
+    metdivfp10 = geo_models.CharField(max_length=5)
+    funcstat10 = geo_models.CharField(max_length=1)
+    aland10 = geo_models.FloatField()
+    awater10 = geo_models.FloatField()
+    intptlat10 = geo_models.CharField(max_length=11)
+    intptlon10 = geo_models.CharField(max_length=12)
+    geom = geo_models.MultiPolygonField()
+
+    objects = geo_models.GeoManager()
+
+    FIELD_MAPPING = {
+        'statefp10' : 'STATEFP10',
+        'countyfp10' : 'COUNTYFP10',
+        'countyns10' : 'COUNTYNS10',
+        'geoid10' : 'GEOID10',
+        'name' : 'NAME10',
+        'namelsad10' : 'NAMELSAD10',
+        'lsad10' : 'LSAD10',
+        'classfp10' : 'CLASSFP10',
+        'mtfcc10' : 'MTFCC10',
+        'csafp10' : 'CSAFP10',
+        'cbsafp10' : 'CBSAFP10',
+        'metdivfp10' : 'METDIVFP10',
+        'funcstat10' : 'FUNCSTAT10',
+        'aland10' : 'ALAND10',
+        'awater10' : 'AWATER10',
+        'intptlat10': 'INTPTLAT10',
+        'intptlon10': 'INTPTLON10',
+        'geom': 'MULTIPOLYGON',
+    }
+
 
 
 def handle_post_load_spatial_data(sender, **kwargs):

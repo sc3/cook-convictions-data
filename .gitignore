@@ -12,4 +12,7 @@ data/Comm_20Areas/
 data/Criminal_Convictions_ALLCOOK_05-09.csv
 data/Municipality/
 data/tl_2010_17_place10/
-
+data/gz_2010_17_160_00_500k/
+data/gz_2010_us_050_00_500k/
+data/tl_2010_17_county10/
+export/
