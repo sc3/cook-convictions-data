@@ -11,7 +11,7 @@ class Command(BaseCommand):
         make_option('--count',
             action='store',
             type='int',
-            default=20,
+            default=77,
             dest='count',
             help="Show this many statutes"),
         make_option('--model',
@@ -25,7 +25,7 @@ class Command(BaseCommand):
         model_cls = getattr(convictions_data.models, options['model'])
         qs = model_cls.objects.all().with_dui_annotations().order_by('-num_dui')
        
-        fieldnames = ['name', 'count', 'pct'] 
+        fieldnames = ['name', 'count', 'pct', 'per_capita'] 
         writer = csv.DictWriter(self.stdout,
             fieldnames=fieldnames)
 
@@ -36,5 +36,6 @@ class Command(BaseCommand):
                 'name': geo.name,
                 'count': geo.num_dui,
                 'pct': geo.pct_dui,
+                'per_capita': geo.dui_per_capita,
             }
             writer.writerow(row)
