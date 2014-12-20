@@ -606,7 +606,7 @@ class ConvictionGeoQuerySet(GeoQuerySet):
             "AND {conviction_table}.iucr_category = 'Homicide'"
         ).format(conviction_table=conviction_table,
             matches_this_id=matches_this_id_where_sql)
-        # BOOKMARK
+
         codes = ["'{}'".format(c) for c in crimes_affecting_women_iucr_codes]
         affecting_women_iucr_codes_str = ", ".join(codes)
         num_affecting_women_sql = ('SELECT COUNT({conviction_table}.id) '
@@ -635,6 +635,45 @@ class ConvictionGeoQuerySet(GeoQuerySet):
         })
 
         return annotated_qs
+
+    def with_dui_annotations(self):
+        this_table = self.model._meta.db_table
+        conviction_table = self.model.get_conviction_model()._meta.db_table
+        conviction_related_col = self.model.get_conviction_related_column_name()
+        matches_this_id_where_sql = ('{conviction_table}.{related_col} = '
+            '{this_table}.id').format(conviction_table=conviction_table,
+                this_table=this_table, related_col=conviction_related_col)
+        num_dui_sql = ('SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.final_statute_formatted ILIKE \'625-5/11-501%%\''
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql)
+        pct_dui_sql = ('SELECT CAST((SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.final_statute_formatted ILIKE '
+            '\'625-5/11-501%%\') AS FLOAT) / '
+            '(SELECT COUNT({conviction_table}.id) '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id}) '
+        ).format(conviction_table=conviction_table,
+            matches_this_id=matches_this_id_where_sql)
+        dui_per_capita_sql = ('SELECT CAST(COUNT({conviction_table}.id) AS FLOAT) / '
+            '"{this_table}"."total_population" '
+            'FROM {conviction_table} '
+            'WHERE {matches_this_id} '
+            'AND {conviction_table}.final_statute_formatted ILIKE '
+            '\'625-5/11-501%%\''
+        ).format(conviction_table=conviction_table,
+            this_table=this_table,
+            matches_this_id=matches_this_id_where_sql)
+
+        return self.extra(select={
+            'num_dui': num_dui_sql,
+            'pct_dui': pct_dui_sql,
+            'dui_per_capita': dui_per_capita_sql,
+        })
 
     def geojson(self, simplify=0.0):
         """

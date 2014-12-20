@@ -185,12 +185,13 @@ Export most common charges overall
 
     ./manage.py most_common_statutes > top_statutes.csv
 
-Export most common charges by community area
---------------------------------------------
+Export most common charges by geography 
+---------------------------------------
 
 ::
 
-    ./manage.py most_common_statutes_by_geo > top_statutes_by_community_area.csv
+    ./manage.py most_common_statutes_by_geo --model CommunityArea > top_statutes_by_community_area.csv
+    ./manage.py most_common_statutes_by_geo --model CensusPlace > export/top_statutes_by_suburb.csv
 
 
 Extract Chicago and Cook County's border from a shapefile
@@ -254,6 +255,13 @@ Export table of drug convictions
 ::
 
     ./manage.py export_drug_stats drug_by_class > export/drug_by_class.csv
+
+Export table of top community areas by DUI
+------------------------------------------
+
+::
+
+    ./manage.py export_dui_convictions_by_geo --model CommunityArea --count 20 > export/top_dui_community_areas.csv
 
 
 Manual Processes
